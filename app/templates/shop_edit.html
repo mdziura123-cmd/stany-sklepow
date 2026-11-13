@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }} – ustawienia{% endblock %}
+{% block content %}
+{% set tab = 'edit' %}{% include "_shopnav.html" %}
+<form method="post" class="card form">
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <label>Nazwa <input name="name" value="{{ shop.name }}"></label>
+  <label>Link startowy (strona główna albo kategoria)
+    <input name="start_url" type="url" value="{{ cfg.start_url }}"></label>
+  <label>Dodatkowe listy produktów – jeden link na linię
+    <textarea name="extra_urls" rows="3" placeholder="https://sklep.pl/kategoria/inna">{{ cfg.extra_urls|join("\n") }}</textarea></label>
+  <label class="check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if shop.enabled }}> Pobieraj codziennie automatycznie</label>
+
+  <details {{ 'open' if error }}>
+    <summary>Zaawansowane – reguły odczytu {% if cfg.preset %}(gotowe ustawienia: {{ cfg.preset }}){% endif %}</summary>
+    <p class="hint">Zmieniaj tylko, gdy test pokazuje błędy (np. po zmianie wyglądu sklepu). Wszystkie pola to wyrażenia regularne.</p>
+    <label>Tryb
+      <select name="mode">
+        <option value="auto" {{ 'selected' if cfg.mode=='auto' }}>Automatyczny (zalecany)</option>
+        <option value="listing" {{ 'selected' if cfg.mode=='listing' }}>Tylko listy kategorii</option>
+        <option value="product_pages" {{ 'selected' if cfg.mode=='product_pages' }}>Strony produktów z mapy strony (wolniej)</option>
+      </select></label>
+    <label>Wzorzec linku produktu (ścieżka adresu) <input name="product_link_pattern" value="{{ cfg.product_link_pattern }}"></label>
+    <label>Wzorzec linku kategorii <input name="category_link_pattern" value="{{ cfg.category_link_pattern }}"></label>
+    <label>Stan (pierwsza grupa = liczba sztuk) <input name="stock_regex" value="{{ cfg.stock_regex }}"></label>
+    <label>Brak towaru (liczony jako 0) <input name="zero_regex" value="{{ cfg.zero_regex }}"></label>
+    <label>Cena <input name="price_regex" value="{{ cfg.price_regex }}"></label>
+    <label>Kod produktu <input name="code_regex" value="{{ cfg.code_regex }}"></label>
+    <label>Liczba produktów na liście (np. „Pozycje 1–20 z 4776”) <input name="total_regex" value="{{ cfg.total_regex }}"></label>
+    <div class="row">
+      <label>Przerwa między zapytaniami (s) <input name="delay_seconds" value="{{ cfg.delay_seconds }}"></label>
+      <label>Maks. stron na listę <input name="max_pages" value="{{ cfg.max_pages }}"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="respect_robots" value="1" {{ 'checked' if cfg.respect_robots }}> Przestrzegaj robots.txt</label>
+    <label class="check"><input type="checkbox" name="reset_detected" value="1"> Wykryj ponownie sposób przechodzenia po stronach</label>
+    <p class="hint">Wykryte automatycznie: <code>{{ cfg.detected|tojson }}</code></p>
+  </details>
+  <div class="row">
+    <button class="btn">Zapisz</button>
+    <button class="btn secondary" name="then_test" value="1">Zapisz i przetestuj</button>
+  </div>
+</form>
+
+<div class="cols">
+<form method="post" action="/shop/{{ shop.id }}/preset" class="card">
+  <h2>Przywróć domyślne reguły</h2>
+  <p class="small muted">Ustawia reguły od nowa dla tej domeny (linki zostają).</p>
+  <button class="btn secondary">Przywróć</button>
+</form>
+<form method="post" action="/shop/{{ shop.id }}/delete" class="card">
+  <h2>Usuń sklep</h2>
+  <p class="small muted">Usuwa sklep i całą historię. Wpisz nazwę „{{ shop.name }}”, aby potwierdzić.</p>
+  <input name="confirm" placeholder="{{ shop.name }}">
+  <button class="btn danger">Usuń</button>
+</form>
+</div>
+{% endblock %}
