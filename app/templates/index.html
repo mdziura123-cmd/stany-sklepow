@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Sklepy</h1>
+{% if not shops %}
+<div class="card empty">
+  <p>Nie masz jeszcze żadnego sklepu.</p>
+  <p>Dodaj sklep, podając link do jego strony głównej albo do kategorii.</p>
+  <a class="btn" href="/shop/new">+ Dodaj sklep</a>
+</div>
+{% endif %}
+<div class="grid">
+{% for s in shops %}
+  <a class="card shop" href="/shop/{{ s.shop.id }}">
+    <h2>{{ s.shop.name }} {% if not s.shop.enabled %}<span class="tag">wyłączony</span>{% endif %}</h2>
+    <div class="muted small">{{ s.shop.config.start_url }}</div>
+    <div class="stats">
+      <div><b>{{ s.counts.products|int }}</b><span>produktów</span></div>
+      {% if s.a.enough %}
+      <div><b>{{ s.a.sold_units|int }}</b><span>sprzedane ({{ s.a.to }})</span></div>
+      <div><b>{{ s.a.delivered_units|int }}</b><span>w dostawach</span></div>
+      {% endif %}
+    </div>
+    {% if s.last %}
+    <div class="small">Ostatnie pobranie: {{ s.last.started[:16]|replace("T"," ") }} –
+      <span class="st st-{{ s.last.status }}">{{ s.last.status }}</span></div>
+    {% else %}<div class="small muted">Jeszcze nie pobierano.</div>{% endif %}
+    {% if not s.a.enough %}<div class="small muted">Analiza pojawi się po drugim dniu pobierania.</div>{% endif %}
+  </a>
+{% endfor %}
+</div>
+{% endblock %}
