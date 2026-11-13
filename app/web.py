@@ -52,8 +52,8 @@ def route(method, pattern):
     return deco
 
 
-def render(name, **ctx):
-    return env.get_template(name).render(**ctx)
+def render(_tpl, **ctx):
+    return env.get_template(_tpl).render(**ctx)
 
 
 def shop_or_404(shop_id):
