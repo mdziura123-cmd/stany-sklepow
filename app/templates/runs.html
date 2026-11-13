@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }} – pobrania{% endblock %}
+{% block content %}
+{% set tab = 'runs' %}{% include "_shopnav.html" %}
+{% if runner_status.running %}
+<p class="muted small">Strona odświeża się co 10 s, dopóki trwa pobieranie.</p>
+<meta http-equiv="refresh" content="10">
+{% endif %}
+<section class="card">
+<table>
+  <thead><tr><th>Start</th><th>Status</th><th class="r">Produkty</th><th class="r">Zapytania</th><th>Czas</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td class="nowrap">{{ r.started[:16]|replace("T"," ") }}</td>
+      <td><span class="st st-{{ r.status }}">{{ r.status }}</span></td>
+      <td class="r">{{ r.found|int }}</td>
+      <td class="r">{{ r.requests|int }}</td>
+      <td class="small muted nowrap">{% if r.finished %}{{ r.finished[11:16] }}{% endif %}</td>
+    </tr>
+    {% if r.message %}
+    <tr class="msg"><td colspan="5"><details><summary>szczegóły</summary><pre>{{ r.message }}</pre></details></td></tr>
+    {% endif %}
+  {% else %}
+    <tr><td colspan="5" class="muted">Jeszcze nie pobierano. Kliknij „Pobierz teraz” albo poczekaj do {{ RUN_HOUR }}:00.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</section>
+{% endblock %}
