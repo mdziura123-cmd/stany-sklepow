@@ -1,0 +1,50 @@
+# Plik do zaimportowania w CasaOS: App Store -> „+” -> Custom Install -> Import.
+# Zamień mdziura123-cmd na swój login z GitHuba (małymi literami).
+name: stany-sklepow
+services:
+  stany-sklepow:
+    image: ghcr.io/mdziura123-cmd/stany-sklepow:latest
+    container_name: stany-sklepow
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      TZ: Europe/Warsaw
+      RUN_HOUR: "3"        # o której codziennie pobierać stany
+    volumes:
+      - /DATA/AppData/stany-sklepow:/data
+    x-casaos:
+      envs:
+        - container: RUN_HOUR
+          description:
+            en_us: Hour of the daily download
+            pl_pl: Godzina codziennego pobierania
+      ports:
+        - container: "8090"
+          description:
+            en_us: Web panel
+            pl_pl: Panel WWW
+      volumes:
+        - container: /data
+          description:
+            en_us: Database
+            pl_pl: Baza danych
+x-casaos:
+  architectures: [amd64, arm64]
+  main: stany-sklepow
+  category: Utilities
+  author: mdziura123-cmd
+  developer: mdziura123-cmd
+  icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/grocy.png
+  tagline:
+    en_us: Track shop stock levels, sales and deliveries
+    pl_pl: Śledzenie stanów sklepów, sprzedaży i dostaw
+  description:
+    en_us: Downloads stock levels from shop websites daily and shows best sellers, categories and deliveries.
+    pl_pl: Codziennie pobiera stany ze stron sklepów i pokazuje bestsellery, kategorie oraz dostawy.
+  title:
+    en_us: Stany sklepów
+    pl_pl: Stany sklepów
+  port_map: "8090"
+  scheme: http
+  index: /
