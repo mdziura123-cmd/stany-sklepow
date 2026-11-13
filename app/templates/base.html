@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Stany sklepów{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">📦 Stany sklepów</a>
+  <nav>
+    <a href="/">Sklepy</a>
+    <a href="/shop/new" class="btn small">+ Dodaj sklep</a>
+  </nav>
+</header>
+{% if runner_status.running %}
+<div class="running">
+  ⏳ Trwa pobieranie: <b>{{ runner_status.shop }}</b>
+  {% if runner_status.source %}· {{ runner_status.source }}{% endif %}
+  {% if runner_status.page %}· strona {{ runner_status.page }}{% endif %}
+  {% if runner_status.found %}· {{ runner_status.found|int }} produktów{% endif %}
+  <form method="post" action="/stop" class="inline"><button class="link">zatrzymaj</button></form>
+</div>
+{% endif %}
+<main>
+{% block content %}{% endblock %}
+</main>
+<footer>stany-sklepow {{ VERSION }} · codzienne pobieranie od godz. {{ RUN_HOUR }}:00</footer>
+</body>
+</html>
