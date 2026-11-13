@@ -19,7 +19,7 @@ DEFAULT = {
     "product_link_pattern": r"/(?:products?|produkty?|p)/[^/?#]+/?$",
     "category_link_pattern": r"/(?:categories|category|kategorie|kategoria|kategorii|c)/[^/?#]+/?$",
     # stan magazynowy w tekście karty produktu – pierwsza grupa to liczba
-    "stock_regex": r"(?:Na stanie|Stan magazynowy|Stan|Dostępn\w*|Ilość w magazynie|W magazynie|In stock|Stock)\s*:?\s*(\d[\d  ]*?)\s*(?:szt|pcs|sztuk|op\b|x\b)",
+    "stock_regex": r"(?:Na stanie|Stan magazynowy|Stan|Dostępn\w*|Ilość w magazynie|W magazynie|In stock|Stock)\s*:?\s*(\d[\d  ]*?)\s*(?:szt|pcs|sztuk|op\b|x\b|mb\b|m\b|kg\b|kpl\b)",
     # teksty oznaczające brak towaru – liczone jako stan 0
     "zero_regex": r"Na zapytanie|Na zamówienie|Brak w magazynie|Brak towaru|Niedostępn\w*|Wyprzedan\w*|Out of stock",
     "price_regex": r"(\d[\d  ]*[.,]\d{1,2})\s*(?:zł|PLN)|(?:PLN|zł)\s*(\d[\d  ]*[.,]\d{1,2})",
@@ -38,7 +38,8 @@ PRESETS = {
     "ringsen.com": {
         "product_link_pattern": r"^/[a-z]{2}/products/[^/?#]+/?$",
         "category_link_pattern": r"^/[a-z]{2}/categories/[^/?#]+/?$",
-        "stock_regex": r"Na stanie\s*:?\s*(\d[\d  ]*?)\s*szt",
+        # liczba bez jednostki: Ringsen podaje sztuki ("103szt.") albo metry ("76m")
+        "stock_regex": r"Na stanie\s*:?\s*(\d+(?:[  ]\d{3})*)",
         "zero_regex": r"Na zapytanie",
         "price_regex": r"PLN\s*(\d[\d  ]*[.,]\d+)",
         "code_regex": r"Kod\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)",
