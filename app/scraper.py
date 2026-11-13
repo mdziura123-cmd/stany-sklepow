@@ -569,11 +569,23 @@ class Crawler:
             self.report.mode_used = "listing"
         for url, label in sources:
             self.crawl_listing(url, label, items)
-        if mode == "auto" and self.report.incomplete and not use_pages:
-            self.report.note("Część list jest niepełna – przełączam na strony produktów z mapy strony.")
+        if self.report.incomplete:
+            bad = [s for s in self.report.sources if s.get("incomplete")]
+            self.report.note("Niepełne listy: " + ", ".join(
+                f"{s['label']} {s['found']}/{s.get('total')}" for s in bad))
+        # strony produktów tylko wtedy, gdy z list nie da się odczytać większości produktów
+        # (np. sklep nie pozwala przechodzić po stronach) – to dużo wolniejszy tryb
+        if mode == "auto" and self.report.incomplete and not use_pages and self.coverage() < 0.5:
+            self.report.note("Listy pokazują mniej niż połowę produktów – przełączam na strony produktów z mapy strony.")
             if self.crawl_product_pages(items):
                 self.detected["mode"] = "product_pages"
         return items
+
+    def coverage(self) -> float:
+        """Jaka część produktów z list z podaną liczbą została odczytana."""
+        withtotal = [s for s in self.report.sources if s.get("total")]
+        total = sum(s["total"] for s in withtotal)
+        return sum(min(s["found"], s["total"]) for s in withtotal) / total if total else 1.0
 
     def crawl_listing_first(self, url, label, items):
         pg = self._parse(url)
@@ -594,8 +606,11 @@ def test_shop(cfg: dict) -> dict:
     try:
         sources = c.discover_sources()
         out["sources"] = sources
-        url, label = sources[0]
-        page = c._start_page if clean_url(url) == clean_url(cfg["start_url"]) else c._parse(url)
+        page, url = None, sources[0][0]
+        for url, label in sources[:3]:  # pierwsza lista bywa pusta (np. kategoria nadrzędna)
+            page = c._start_page if clean_url(url) == clean_url(cfg["start_url"]) else c._parse(url)
+            if page and page.items:
+                break
         if page:
             out["products"] = page.items[:30]
             out["total"] = page.total
