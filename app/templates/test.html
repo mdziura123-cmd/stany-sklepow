@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }} – test{% endblock %}
+{% block content %}
+{% set tab = 'test' %}{% include "_shopnav.html" %}
+<section class="card">
+  <h2>Test odczytu</h2>
+  <p class="muted small">Test pobiera stronę startową i pierwszą listę produktów. Nic nie jest zapisywane.
+    Zapytań: {{ res.requests }}. {% if cfg.preset %}Użyto gotowych ustawień dla <b>{{ cfg.preset }}</b>.{% else %}Użyto reguł uniwersalnych.{% endif %}</p>
+  {% if res.ok %}
+    <div class="ok">✅ Odczyt działa: na pierwszej liście znaleziono {{ res.found }} produktów ze stanem
+      {% if res.total %}(lista podaje łącznie {{ res.total|int }}){% endif %}.</div>
+  {% else %}
+    <div class="error">❌ {{ res.error }}</div>
+    <p class="small">Co możesz zrobić: w <a href="/shop/{{ shop.id }}/edit">ustawieniach</a> popraw
+      „wzorzec linku produktu” (fragment adresu, po którym poznać produkt, np. <code>/produkt/</code>)
+      i „wyrażenie stanu” (tekst przed liczbą sztuk, np. <code>Dostępność: 12 szt.</code>).</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Listy do sprawdzania ({{ res.sources|length }})</h2>
+  <ul class="sources">
+  {% for u, label in res.sources %}<li><b>{{ label }}</b> <a class="muted small" href="{{ u }}" target="_blank" rel="noopener">{{ u }}</a></li>{% endfor %}
+  </ul>
+</section>
+
+{% if res.products %}
+<section class="card">
+  <h2>Pierwsze produkty z: {{ res.first_url }}</h2>
+  <table>
+    <thead><tr><th>Produkt</th><th>Kod</th><th class="r">Stan</th><th class="r">Cena</th></tr></thead>
+    <tbody>
+    {% for it in res.products %}
+      <tr><td><a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.name }}</a></td><td class="small">{{ it.code }}</td>
+        <td class="r"><b>{{ it.stock|int }}</b></td><td class="r">{{ it.price|money if it.price is not none else '–' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+<form method="post" action="/shop/{{ shop.id }}/run"><button class="btn">Wygląda dobrze – pobierz teraz pełne stany</button></form>
+{% endblock %}
