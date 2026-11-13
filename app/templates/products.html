@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }} – produkty{% endblock %}
+{% block content %}
+{% set tab = 'products' %}{% include "_shopnav.html" %}
+<form class="filters" method="get">
+  <input name="q" placeholder="Szukaj nazwy lub kodu" value="{{ q }}">
+  <select name="cat">
+    <option value="">Wszystkie kategorie</option>
+    {% for c in cats %}<option {{ 'selected' if c==cat }}>{{ c }}</option>{% endfor %}
+  </select>
+  <button class="btn small">Filtruj</button>
+</form>
+<p class="muted small">Produktów: {{ count|int }}</p>
+<section class="card">
+<table>
+  <thead><tr><th>Produkt</th><th>Kategoria</th><th class="r">Stan</th><th class="r">Cena</th><th>Odczyt</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/shop/{{ shop.id }}/product/{{ r.id }}">{{ r.name }}</a>
+        {% if r.code %}<div class="muted small">{{ r.code }}</div>{% endif %}</td>
+      <td class="small">{{ r.category }}</td>
+      <td class="r"><b>{{ r.stock|int }}</b></td>
+      <td class="r">{{ r.price|money if r.price is not none else '–' }}</td>
+      <td class="small muted nowrap">{{ r.day }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">Brak produktów.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</section>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a href="?q={{ q|urlencode }}&cat={{ cat|urlencode }}&page={{ page-1 }}">← poprzednia</a>{% endif %}
+  <span>strona {{ page }} / {{ pages }}</span>
+  {% if page < pages %}<a href="?q={{ q|urlencode }}&cat={{ cat|urlencode }}&page={{ page+1 }}">następna →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
