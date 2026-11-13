@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block content %}
+{% set tab = 'products' %}{% include "_shopnav.html" %}
+<section class="card">
+  <h2>{{ p.name }}</h2>
+  <p class="muted small">{{ p.category }}{% if p.code %} · kod {{ p.code }}{% endif %} ·
+    <a href="{{ p.url }}" target="_blank" rel="noopener">otwórz w sklepie ↗</a></p>
+  <div class="kpis">
+    <div class="kpi"><span>Sprzedane (cała historia)</span><b>{{ sold|int }}</b></div>
+    <div class="kpi"><span>Przybyło w dostawach</span><b>{{ deliv|int }}</b></div>
+    <div class="kpi"><span>Śledzony od</span><b class="smallb">{{ p.first_seen }}</b></div>
+  </div>
+  {% if spark %}
+  <div class="spark">
+    <svg viewBox="0 0 600 100" preserveAspectRatio="none"><polyline points="{{ spark }}" /></svg>
+    <div class="muted small">stan: min {{ mn|int }}, maks {{ mx|int }}</div>
+  </div>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Historia odczytów</h2>
+  <table>
+    <thead><tr><th>Dzień</th><th class="r">Stan</th><th class="r">Zmiana</th><th class="r">Cena</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.day }}</td>
+        <td class="r"><b>{{ r.stock|int }}</b></td>
+        <td class="r {{ 'plus' if r.delta and r.delta > 0 else ('minus' if r.delta and r.delta < 0) }}">
+          {% if r.delta %}{{ '+' if r.delta > 0 }}{{ r.delta|int }}{% else %}–{% endif %}</td>
+        <td class="r">{{ r.price|money if r.price is not none else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
