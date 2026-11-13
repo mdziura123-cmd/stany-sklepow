@@ -1,0 +1,14 @@
+<div class="shophead">
+  <div>
+    <h1>{{ shop.name }}</h1>
+    <a class="muted small" href="{{ shop.config.start_url }}" target="_blank" rel="noopener">{{ shop.config.start_url }}</a>
+  </div>
+  <form method="post" action="/shop/{{ shop.id }}/run"><button class="btn">Pobierz teraz</button></form>
+</div>
+<nav class="tabs">
+  <a href="/shop/{{ shop.id }}" class="{{ 'on' if tab=='dash' }}">Analiza</a>
+  <a href="/shop/{{ shop.id }}/products" class="{{ 'on' if tab=='products' }}">Produkty</a>
+  <a href="/shop/{{ shop.id }}/runs" class="{{ 'on' if tab=='runs' }}">Pobrania</a>
+  <a href="/shop/{{ shop.id }}/test" class="{{ 'on' if tab=='test' }}">Test</a>
+  <a href="/shop/{{ shop.id }}/edit" class="{{ 'on' if tab=='edit' }}">Ustawienia</a>
+</nav>
