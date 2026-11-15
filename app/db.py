@@ -76,6 +76,14 @@ CREATE TABLE IF NOT EXISTS shop_days (
     stock_value REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (shop_id, day)
 );
+CREATE TABLE IF NOT EXISTS readings (
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL,             -- "RRRR-MM-DD GG:MM" (zaplanowane: pełne godziny)
+    day TEXT NOT NULL,
+    products INTEGER NOT NULL DEFAULT 0,
+    stock_value REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (shop_id, ts)
+);
 CREATE TABLE IF NOT EXISTS watch (
     product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
     shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -88,8 +96,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
-PRODUCT_COLUMNS = {
-    "cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
+EXTRA_COLUMNS = {
+    "products": {"cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
+                 "cur_ts": "TEXT", "first_ts": "TEXT"},
+    "changes": {"ts": "TEXT", "prev_ts": "TEXT"},
+    "runs": {"ts": "TEXT"},
 }
 
 
@@ -112,15 +123,20 @@ def db_path() -> str:
 def init():
     c = conn()
     c.executescript(SCHEMA)
-    cols = {r["name"] for r in c.execute("PRAGMA table_info(products)")}
     added = False
-    for name, typ in PRODUCT_COLUMNS.items():
-        if name not in cols:
-            c.execute(f"ALTER TABLE products ADD COLUMN {name} {typ}")
-            added = True
+    for table, columns in EXTRA_COLUMNS.items():
+        cols = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        for name, typ in columns.items():
+            if name not in cols:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+                if table == "products" and name not in ("cur_ts", "first_ts"):
+                    added = True
+    c.execute("CREATE INDEX IF NOT EXISTS changes_shop_ts ON changes(shop_id, ts)")
     c.commit()
     if added or c.execute("SELECT value FROM settings WHERE key='schema'").fetchone() is None:
         migrate_v2()
+    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '3')")
+    c.commit()
 
 
 def migrate_v2():
@@ -160,24 +176,31 @@ def migrate_v2():
             FROM snapshots s JOIN products p ON p.id = s.product_id
             GROUP BY p.shop_id, s.day
         """)
-        _mark_reversals(c, None)
+        _mark_reversals(c)
         c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '2')")
     log.info("Migracja zakończona.")
 
 
-def _mark_reversals(c, day):
-    """Korekty: stan spadł i następnego odczytu wrócił dokładnie do poprzedniej wartości
+def _mark_reversals(c, day=None, ts=None):
+    """Korekty: stan spadł i w następnym odczycie wrócił dokładnie do poprzedniej wartości
     (albo odwrotnie). Takie pary nie są liczone jako sprzedaż ani dostawa."""
     sql = """
         SELECT a.id AS a_id, b.id AS b_id FROM changes a
-        JOIN changes b ON b.product_id = a.product_id AND b.prev_day = a.day
+        JOIN changes b ON b.product_id = a.product_id
+         AND ((b.prev_ts IS NOT NULL AND b.prev_ts = a.ts
+               AND NOT EXISTS (SELECT 1 FROM readings r WHERE r.shop_id = b.shop_id
+                               AND r.ts > a.ts AND r.ts < b.ts))
+           OR (b.prev_ts IS NULL AND b.prev_day = a.day
+               AND NOT EXISTS (SELECT 1 FROM shop_days d WHERE d.shop_id = b.shop_id
+                               AND d.day > a.day AND d.day < b.day)))
         WHERE a.kind IN ('sale','delivery') AND b.kind IN ('sale','delivery')
           AND ABS(a.delta + b.delta) < 0.0001 AND a.delta <> 0
-          AND NOT EXISTS (SELECT 1 FROM shop_days d WHERE d.shop_id = b.shop_id
-                          AND d.day > a.day AND d.day < b.day)
     """
     args: tuple = ()
-    if day:
+    if ts:
+        sql += " AND b.ts = ?"
+        args = (ts,)
+    elif day:
         sql += " AND b.day = ?"
         args = (day,)
     pairs = c.execute(sql, args).fetchall()
@@ -248,10 +271,10 @@ def delete_shop(shop_id: int):
 
 # ---------------------------------------------------------------- pobrania
 
-def run_start(shop_id: int, day: str) -> int:
+def run_start(shop_id: int, day: str, ts: str | None = None) -> int:
     cur = conn().execute(
-        "INSERT INTO runs(shop_id, day, started, status) VALUES (?,?,?, 'trwa')",
-        (shop_id, day, config.now().isoformat(timespec="seconds")),
+        "INSERT INTO runs(shop_id, day, ts, started, status) VALUES (?,?,?,?, 'trwa')",
+        (shop_id, day, ts, config.now().isoformat(timespec="seconds")),
     )
     conn().commit()
     return cur.lastrowid
@@ -292,6 +315,10 @@ def tried_today(shop_id: int, day: str) -> int:
     return conn().execute("SELECT COUNT(*) FROM runs WHERE shop_id=? AND day=?", (shop_id, day)).fetchone()[0]
 
 
+def slot_runs(shop_id: int, ts: str):
+    return conn().execute("SELECT * FROM runs WHERE shop_id=? AND ts=? ORDER BY id", (shop_id, ts)).fetchall()
+
+
 def mark_stale_runs():
     """Po restarcie kontenera przerwane pobrania nie mogą wisieć jako 'trwa'."""
     conn().execute("UPDATE runs SET status='przerwany', finished=started WHERE status='trwa'")
@@ -300,59 +327,65 @@ def mark_stale_runs():
 
 # ---------------------------------------------------------------- zapis odczytu
 
-def _rollback_day(c, shop_id: int, day: str):
-    """Ponowne pobranie tego samego dnia: cofa wcześniejszy zapis z tego dnia."""
-    # korekty sparowane ze zmianą z cofanego dnia wracają do zwykłego rodzaju
+def _rollback_reading(c, shop_id: int, ts: str):
+    """Ponowne pobranie tego samego odczytu (np. ponowna próba o 5:00): cofa jego zapis."""
     c.execute("""UPDATE changes SET kind = CASE WHEN delta < 0 THEN 'sale' WHEN delta > 0 THEN 'delivery'
                  ELSE 'price' END
                  WHERE kind='correction' AND id IN (
-                   SELECT a.id FROM changes a JOIN changes b
-                     ON b.product_id = a.product_id AND b.prev_day = a.day
-                   WHERE b.shop_id=? AND b.day=?)""", (shop_id, day))
-    c.execute("DELETE FROM changes WHERE shop_id=? AND day=?", (shop_id, day))
-    c.execute("DELETE FROM snapshots WHERE day=? AND product_id IN (SELECT id FROM products WHERE shop_id=?)",
-              (day, shop_id))
-    c.execute("""
-        UPDATE products SET
-          cur_stock = (SELECT stock FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
-          cur_price = (SELECT price FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
-          cur_day = (SELECT day FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
-          stock_since = COALESCE((SELECT MAX(day) FROM changes ch WHERE ch.product_id = products.id
-                                  AND ch.kind <> 'price'), first_seen),
-          last_seen = COALESCE((SELECT MAX(day) FROM shop_days d WHERE d.shop_id = products.shop_id
-                                AND d.day < ?), first_seen)
-        WHERE shop_id = ? AND (cur_day = ? OR last_seen = ?)
-    """, (day, shop_id, day, day))
-    c.execute("DELETE FROM shop_days WHERE shop_id=? AND day=?", (shop_id, day))
+                   SELECT a.id FROM changes a JOIN changes b ON b.product_id = a.product_id AND b.prev_ts = a.ts
+                   WHERE b.shop_id=? AND b.ts=?)""", (shop_id, ts))
+    affected = []
+    for r in c.execute("SELECT product_id, prev_stock, prev_price, prev_ts, prev_day FROM changes "
+                       "WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchall():
+        c.execute("UPDATE products SET cur_stock=?, cur_price=?, cur_ts=?, cur_day=? WHERE id=?",
+                  (r["prev_stock"], r["prev_price"], r["prev_ts"], r["prev_day"], r["product_id"]))
+        affected.append(r["product_id"])
+    c.execute("DELETE FROM changes WHERE shop_id=? AND ts=?", (shop_id, ts))
+    # produkty, które pojawiły się dopiero w cofanym odczycie
+    new_ids = [r[0] for r in c.execute("SELECT id FROM products WHERE shop_id=? AND first_ts=?", (shop_id, ts))]
+    c.execute("UPDATE products SET cur_stock=NULL, cur_price=NULL, cur_ts=NULL, cur_day=NULL "
+              "WHERE shop_id=? AND first_ts=?", (shop_id, ts))
+    # niezmienione produkty wracają do poprzedniego odczytu
+    prev = c.execute("SELECT MAX(ts) FROM readings WHERE shop_id=? AND ts<?", (shop_id, ts)).fetchone()[0]
+    c.execute("UPDATE products SET cur_ts=? WHERE shop_id=? AND cur_ts=?", (prev, shop_id, ts))
+    day = ts[:10]
+    for pid in affected + new_ids:
+        c.execute("DELETE FROM snapshots WHERE product_id=? AND day=?", (pid, day))
+        c.execute("""INSERT INTO snapshots(product_id, day, stock, price)
+                     SELECT id, cur_day, cur_stock, cur_price FROM products WHERE id=? AND cur_day=?""",
+                  (pid, day))
+        c.execute("""UPDATE products SET stock_since = COALESCE((SELECT MAX(day) FROM changes ch
+                     WHERE ch.product_id = products.id AND ch.kind <> 'price'), first_seen) WHERE id=?""", (pid,))
+    c.execute("DELETE FROM readings WHERE shop_id=? AND ts=?", (shop_id, ts))
 
 
-def save_snapshot(shop_id: int, day: str, items) -> dict:
-    """Zapisuje odczyt dnia i zwraca podsumowanie zmian."""
+def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
+    """Zapisuje odczyt i zwraca podsumowanie zmian. ts = czas odczytu "RRRR-MM-DD GG:MM"."""
     c = conn()
+    ts = ts or f"{day} {config.now():%H:%M}"
     items = [it for it in items if it.stock is not None]
     summary = {"new": 0, "changes": 0, "products": len(items)}
     with c:
-        if c.execute("SELECT 1 FROM products WHERE shop_id=? AND (cur_day=? OR last_seen=?) LIMIT 1",
-                     (shop_id, day, day)).fetchone():
-            _rollback_day(c, shop_id, day)
+        if c.execute("SELECT 1 FROM readings WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchone():
+            _rollback_reading(c, shop_id, ts)
         known = {r["key"]: r for r in c.execute(
-            "SELECT id, key, cur_stock, cur_price, cur_day FROM products WHERE shop_id=?", (shop_id,))}
+            "SELECT id, key, cur_stock, cur_price, cur_day, cur_ts FROM products WHERE shop_id=?", (shop_id,))}
         for it in items:
             old = known.get(it.key)
             if old is None or old["cur_day"] is None:
                 if old is None:
                     pid = c.execute(
                         """INSERT INTO products(shop_id, key, name, url, code, category, first_seen, last_seen,
-                                                cur_stock, cur_price, cur_day, stock_since)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                                cur_stock, cur_price, cur_day, cur_ts, first_ts, stock_since)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (shop_id, it.key, it.name, it.url, it.code, it.category, day, day,
-                         it.stock, it.price, day, day)).lastrowid
+                         it.stock, it.price, day, ts, ts, day)).lastrowid
                     summary["new"] += 1
                 else:
                     pid = old["id"]
                     c.execute("""UPDATE products SET name=?, url=?, last_seen=?, cur_stock=?, cur_price=?,
-                                 cur_day=?, stock_since=COALESCE(stock_since, ?) WHERE id=?""",
-                              (it.name, it.url, day, it.stock, it.price, day, day, pid))
+                                 cur_day=?, cur_ts=?, stock_since=COALESCE(stock_since, ?) WHERE id=?""",
+                              (it.name, it.url, day, it.stock, it.price, day, ts, day, pid))
                 c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
                           (pid, day, it.stock, it.price))
                 continue
@@ -367,26 +400,32 @@ def save_snapshot(shop_id: int, day: str, items) -> dict:
                    WHERE id=?""",
                 (it.name, it.url, day, it.code, it.code, it.category, it.category, pid))
             if not (stock_changed or price_changed):
+                c.execute("UPDATE products SET cur_ts=? WHERE id=?", (ts, pid))
                 continue
             delta = 0.0 if old["cur_stock"] is None else it.stock - old["cur_stock"]
             kind = "sale" if delta < 0 else ("delivery" if delta > 0 else "price")
             c.execute(
-                """INSERT INTO changes(shop_id, product_id, day, prev_day, prev_stock, stock, delta,
-                                       price, prev_price, kind) VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (shop_id, pid, day, old["cur_day"], old["cur_stock"], it.stock, delta,
+                """INSERT INTO changes(shop_id, product_id, day, prev_day, ts, prev_ts, prev_stock, stock, delta,
+                                       price, prev_price, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (shop_id, pid, day, old["cur_day"], ts, old["cur_ts"], old["cur_stock"], it.stock, delta,
                  it.price if it.price is not None else old["cur_price"], old["cur_price"], kind))
             c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
                       (pid, day, it.stock, it.price))
-            c.execute("""UPDATE products SET cur_stock=?, cur_price=COALESCE(?, cur_price), cur_day=?,
+            c.execute("""UPDATE products SET cur_stock=?, cur_price=COALESCE(?, cur_price), cur_day=?, cur_ts=?,
                          stock_since=CASE WHEN ? THEN ? ELSE stock_since END WHERE id=?""",
-                      (it.stock, it.price, day, 1 if stock_changed else 0, day, pid))
+                      (it.stock, it.price, day, ts, 1 if stock_changed else 0, day, pid))
             summary["changes"] += 1
-        summary["corrections"] = _mark_reversals(c, day)
-        r = c.execute("""SELECT COUNT(*), COALESCE(SUM(cur_stock * COALESCE(cur_price, 0)), 0)
-                         FROM products WHERE shop_id=? AND last_seen=?""", (shop_id, day)).fetchone()
+        value = sum((it.stock or 0) * (it.price or 0) for it in items)
+        c.execute("INSERT OR REPLACE INTO readings(shop_id, ts, day, products, stock_value) VALUES (?,?,?,?,?)",
+                  (shop_id, ts, day, len(items), value))
         c.execute("INSERT OR REPLACE INTO shop_days(shop_id, day, products, stock_value) VALUES (?,?,?,?)",
-                  (shop_id, day, r[0], r[1]))
+                  (shop_id, day, len(items), value))
+        summary["corrections"] = _mark_reversals(c, ts=ts)
     return summary
+
+
+def readings(shop_id: int) -> list[str]:
+    return [r[0] for r in conn().execute("SELECT ts FROM readings WHERE shop_id=? ORDER BY ts", (shop_id,))]
 
 
 # ---------------------------------------------------------------- odczyt
@@ -467,3 +506,16 @@ def set_watch(shop_id: int, pid: int, on: bool, min_stock=None):
     else:
         c.execute("DELETE FROM watch WHERE product_id=?", (pid,))
     c.commit()
+
+
+# ---------------------------------------------------------------- harmonogram
+
+def run_hours() -> list[int]:
+    hrs = get_setting("run_hours")
+    if not hrs:
+        hrs = config.DEFAULT_RUN_HOURS or [5, 16, 22]
+    return sorted({int(h) for h in hrs if 0 <= int(h) <= 23})
+
+
+def run_hours_text() -> str:
+    return ", ".join(f"{h}:00" for h in run_hours())

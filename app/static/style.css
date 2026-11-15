@@ -293,3 +293,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
   .card-head { padding: 13px 14px 0; }
   .card-body { padding: 12px 14px 14px; }
 }
+
+/* pora dnia: siatka dni tygodnia × okno (jedna barwa, jasna → ciemna) */
+.heat { display: grid; gap: 4px; align-items: center; }
+.heat .hd { font-size: .72rem; color: var(--muted); text-align: center; }
+.heat .wd { font-size: .78rem; color: var(--text-2); }
+.heat .c { height: 34px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--line);
+  display: grid; place-items: center; font-size: .74rem; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.heat .h1 { background: #cde2fb; border-color: transparent; color: #0d366b; }
+.heat .h2 { background: #9ec5f4; border-color: transparent; color: #0d366b; }
+.heat .h3 { background: #5598e7; border-color: transparent; color: #fff; }
+.heat .h4 { background: #2a78d6; border-color: transparent; color: #fff; }
+.heat .h5 { background: #184f95; border-color: transparent; color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .heat .h1 { background: #16263b; color: #cde2fb; } .heat .h2 { background: #1c3a62; color: #cde2fb; }
+  .heat .h3 { background: #256abf; } .heat .h4 { background: #3987e5; } .heat .h5 { background: #86b6ef; color: #0d1b2e; }
+}
+.win { border-left: 3px solid var(--series-1); }
+.win.best { border-left-color: var(--good); }

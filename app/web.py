@@ -109,6 +109,7 @@ def render(_tpl, req=None, **ctx):
     ctx.setdefault("shops_nav", db.list_shops())
     ctx.setdefault("auth_on", auth.password_set())
     ctx.setdefault("path", urlparse(req.path).path if req else "")
+    ctx.setdefault("run_hours_txt", db.run_hours_text())
     return env.get_template(_tpl).render(**ctx)
 
 
@@ -214,6 +215,14 @@ def shop_deliveries(req, q, sid):
     period = period_of(q, "30")
     return render("deliveries.html", req, **shop_ctx(shop, "deliv", d=stats.deliveries(shop, period),
                                                      period=period))
+
+
+@route("GET", r"/shop/(\d+)/dayparts")
+def shop_dayparts(req, q, sid):
+    shop = shop_or_404(sid)
+    period = period_of(q, "30")
+    return render("dayparts.html", req, **shop_ctx(shop, "dayparts", dp=stats.day_parts(shop, period),
+                                                   period=period))
 
 
 @route("GET", r"/shop/(\d+)/stock")
@@ -501,6 +510,16 @@ def settings_notify(req, q):
             raise Redirect("/settings?err=" + quote("; ".join(errs)) + "#powiadomienia")
         raise Redirect("/settings?msg=" + quote("Wysłano wiadomość testową.") + "#powiadomienia")
     raise Redirect("/settings?msg=" + quote("Zapisano ustawienia powiadomień.") + "#powiadomienia")
+
+
+@route("POST", "/settings/schedule")
+def settings_schedule(req, q):
+    raw = req.form().get("hours", "")
+    hrs = sorted({int(x) for x in re.findall(r"\d{1,2}", raw) if 0 <= int(x) <= 23})
+    if not hrs:
+        raise Redirect("/settings?err=" + quote("Podaj co najmniej jedną godzinę, np. 5, 16, 22.") + "#harmonogram")
+    db.set_setting("run_hours", hrs)
+    raise Redirect("/settings?msg=" + quote("Zapisano godziny pobierania: " + db.run_hours_text()) + "#harmonogram")
 
 
 @route("POST", "/settings/password")

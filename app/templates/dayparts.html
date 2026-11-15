@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, periods, empty, product_cell %}
+{% block title %}{{ shop.name }} · Pora dnia{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+<div class="toolbar">
+  {{ periods(period, '/shop/' ~ shop.id ~ '/dayparts', ('7','30','90','all')) }}
+  {% if dp.range.enough %}<span class="range">{{ dp.range.label }} · odczyty o {{ run_hours_txt }}</span>{% endif %}
+</div>
+
+{% if dp.hours|length < 2 %}
+<div class="card">{{ empty('Potrzebne są co najmniej dwa pobrania dziennie', 'Ustaw godziny pobierania w Ustawieniach → Harmonogram, np. 5, 16, 22.', 'sun') }}</div>
+{% elif not dp.enough %}
+<div class="card">{{ empty('Zbieram dane', 'Statystyka pory dnia pojawi się po pierwszych pełnych oknach między odczytami o ' ~ run_hours_txt ~ '. Pierwsze wyniki będą jutro rano, a wiarygodne po 1–2 tygodniach.', 'sun') }}</div>
+{% else %}
+{% if dp.best %}
+<div class="alert ok">{{ icon('sun') }}<div>Najwyższa sprzedaż na godzinę: <b>{{ dp.best.name|lower }} ({{ dp.best.label }})</b> –
+  średnio {{ dp.best.value_per_hour|money }} na godzinę, {{ '%.1f'|format(dp.best.tx_per_hour)|replace('.', ',') }} spadków stanu na godzinę.</div></div>
+{% endif %}
+
+<div class="kpis">
+{% for r in dp.res %}
+  <div class="kpi win {{ 'best' if dp.best and r.label == dp.best.label }}">
+    <div class="label">{{ r.name }} · {{ r.label }}</div>
+    <div class="value">{{ r.value_per_hour|money(0) }}<span class="small muted"> / godz.</span></div>
+    <div class="foot"><span>{{ '%.0f'|format(r.share) }}% sprzedaży · {{ r.tx }} spadków · {{ r.occurrences }} okien</span></div>
+  </div>
+{% endfor %}
+</div>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>Sprzedaż na godzinę</h2></div>
+    <div class="card-body">
+      {{ charts.bar_chart(dp.bars, width=480, height=240) }}
+      <p class="hint">Okna mają różną długość ({% for r in dp.res %}{{ r.label }} = {{ r.hours }} h{{ ', ' if not loop.last }}{% endfor %}),
+        dlatego porównujemy wartość sprzedaży na jedną godzinę.</p>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Dni tygodnia × pora dnia</h2></div>
+    <div class="card-body">
+      <div class="heat" style="grid-template-columns: 46px repeat({{ dp.windows|length }}, 1fr)">
+        <div></div>{% for w in dp.windows %}<div class="hd">{{ w.name }}<br>{{ w.label }}</div>{% endfor %}
+        {% for row in dp.grid %}
+          <div class="wd">{{ row.name }}</div>
+          {% for c in row.cells %}
+            <div class="c {{ ('h' ~ c.level) if c.level }}" data-tip="{{ row.full|capitalize }}, {{ dp.windows[loop.index0].label }}|{% if c.n %}{{ (c.vph or 0)|money(0) }} na godzinę|łącznie {{ c.value|money(0) }} ({{ c.n }} okien){% else %}brak danych{% endif %}">{% if c.n %}{{ (c.vph or 0)|money(0)|replace(' zł', '') }}{% else %}–{% endif %}</div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+      <p class="hint">Średnia wartość sprzedaży na godzinę (zł). Noc przypisana do dnia, w którym się zaczyna.</p>
+    </div>
+  </section>
+</div>
+
+<h2 style="margin:26px 0 12px">Co sprzedaje się o jakiej porze</h2>
+<div class="grid g3">
+{% for r in dp.res %}
+  <section class="card">
+    <div class="card-head"><h2>{{ r.name }} · {{ r.label }}</h2><span class="hint">{{ r.products }} produktów</span></div>
+    <div class="card-body flush">
+      {% if not r.top %}{{ empty('Brak sprzedaży') }}{% else %}
+      <table><tbody>
+      {% for p in r.top %}
+        <tr><td>{{ product_cell(shop, p) }}</td><td class="r"><b>{{ p.value|money }}</b><div class="meta">{{ p.sold|num }} szt.</div></td></tr>
+      {% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</div>
+
+<div class="alert info mt">{{ icon('alert') }}<div><b>O „zainteresowaniu”:</b> sklep nie pokazuje liczby odwiedzin, więc aktywność mierzymy liczbą
+  spadków stanu (każdy spadek to co najmniej jedno zamówienie). Do statystyki liczą się tylko zmiany między dwoma kolejnymi
+  zaplanowanymi odczytami; ręczne „Pobierz teraz” w środku dnia rozbija okno i nie jest wtedy brane pod uwagę.</div></div>
+{% endif %}
+{% endblock %}

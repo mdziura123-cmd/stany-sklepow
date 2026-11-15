@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from statistics import median
 
-from . import db
+from . import config, db
 
 PERIODS = {"1": "dzień", "7": "7 dni", "30": "30 dni", "90": "90 dni", "all": "całość"}
 WEEKDAYS = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]
@@ -45,7 +45,7 @@ class Range:
             return
         self.end = self.last
         if self.period == "all":
-            self.start = self.days[1]
+            self.start = self.days[0]  # przy kilku odczytach dziennie zmiany są już pierwszego dnia
         else:
             self.start = _shift(self.last, -(int(self.period) - 1))
         n = (_d(self.end) - _d(self.start)).days + 1
@@ -67,9 +67,16 @@ def prev_reading(shop_id: int) -> dict:
     return dict(zip(days[1:], days[:-1]))
 
 
-def sale_day(prev: dict, day: str) -> str:
-    """Do którego dnia przypisać zmianę: dzień poprzedniego odczytu (odczyt o świcie)."""
-    return prev.get(day) or _shift(day, -1)
+def sale_day(prev: dict, r) -> str:
+    """Do którego dnia przypisać zmianę: dzień poprzedniego odczytu.
+    Przy kilku odczytach dziennie: odczyt o 16:00 → ten sam dzień, o 5:00 → wieczór dnia poprzedniego."""
+    try:
+        pts = r["prev_ts"]
+    except (IndexError, KeyError):
+        pts = None
+    if pts:
+        return pts[:10]
+    return prev.get(r["day"]) or _shift(r["day"], -1)
 
 
 def changes(shop_id: int, d_from: str, d_to: str, kinds=("sale", "delivery")):
@@ -217,7 +224,7 @@ def weekday_sales(sid, d_from, d_to):
         if d_from <= day <= d_to and day in prev:
             w[_d(prev[day]).weekday()]["days"].add(prev[day])
     for r in rows:
-        i = _d(sale_day(prev, r["day"])).weekday()
+        i = _d(sale_day(prev, r)).weekday()
         w[i]["sold"] += -r["delta"]
         w[i]["value"] += -r["delta"] * _price(r)
     for x in w:
@@ -323,7 +330,7 @@ def delivery_calendar(shop: dict):
         d["products"] += 1
         d["units"] += r["delta"]
         d["value"] += r["delta"] * _price(r)
-        d["prev_day"] = sale_day(prev, r["day"])
+        d["prev_day"] = sale_day(prev, r)
     deliv_days = sorted(d for d, v in by_day.items() if v["products"] >= min_products)
     weekdays = [{"name": WEEKDAYS[i], "full": WEEKDAYS_FULL[i], "count": 0, "products": 0} for i in range(7)]
     for d in deliv_days:
@@ -523,11 +530,119 @@ def alerts(shop: dict, day: str):
     return out
 
 
-def day_summary(shop: dict) -> dict | None:
-    rg = Range(shop["id"], "1")
-    if not rg.enough:
+def day_summary(shop: dict, day: str | None = None) -> dict | None:
+    """Podsumowanie dnia (domyślnie ostatniego pełnego dnia przed dzisiejszym)."""
+    days = db.shop_days(shop["id"])
+    if len(days) < 2:
         return None
-    rows = changes(shop["id"], rg.end, rg.end)
+    if day is None:
+        today = config.today()
+        past = [d for d in days if d < today]
+        day = past[-1] if past and len(past) >= 2 else days[-1]
+    rows = changes(shop["id"], day, day)
     t = _totals(rows)
-    return {"day": rg.end, "t": t, "top": top_products(rows, 3), "alerts": alerts(shop, rg.end),
+    return {"day": day, "t": t, "top": top_products(rows, 3), "alerts": alerts(shop, day),
             "categories": by_category(rows)[:3]}
+
+
+# ---------------------------------------------------------------- pora dnia
+
+def windows_for(hours: list[int]) -> list[dict]:
+    """Okna między kolejnymi godzinami pobierania, np. [5,16,22] → 22–5, 5–16, 16–22."""
+    out = []
+    for i, h in enumerate(hours):
+        p = hours[i - 1]
+        if p >= 20 or (p < 4 and h <= 8) or p > h:
+            name = "Noc"
+        elif h <= 12:
+            name = "Rano"
+        elif h <= 17:
+            name = "Dzień"
+        else:
+            name = "Wieczór"
+        out.append({"start": p, "end": h, "hours": (h - p) % 24 or 24, "label": f"{p}:00–{h}:00", "name": name})
+    return out
+
+
+def _window_key(prev_ts: str | None, ts: str | None, hours: list[int]):
+    """Indeks okna, jeśli zmiana leży dokładnie między dwoma kolejnymi zaplanowanymi odczytami."""
+    if not prev_ts or not ts or ts[14:16] != "00" or prev_ts[14:16] != "00":
+        return None
+    h, ph = int(ts[11:13]), int(prev_ts[11:13])
+    if h not in hours:
+        return None
+    i = hours.index(h)
+    exp_h = hours[i - 1]
+    exp_day = ts[:10] if (i > 0 and len(hours) > 1) else _shift(ts[:10], -1)
+    if prev_ts[:10] == exp_day and ph == exp_h:
+        return i
+    return None
+
+
+def day_parts(shop: dict, period: str = "30") -> dict:
+    """Sprzedaż i aktywność w oknach między godzinami pobierania."""
+    sid = shop["id"]
+    hours = db.run_hours()
+    wins = windows_for(hours)
+    rg = Range(sid, period)
+    out = {"range": rg, "enough": False, "windows": wins, "hours": hours}
+    if not rg.enough or len(hours) < 2:
+        return out
+    readings = [t for t in db.readings(sid) if rg.start <= t[:10] <= rg.end]
+    all_readings = db.readings(sid)
+    # ile pełnych wystąpień każdego okna (dwa kolejne zaplanowane odczyty)
+    occ = [0] * len(wins)
+    occ_wd = [[0] * len(wins) for _ in range(7)]
+    for a, b in zip(all_readings, all_readings[1:]):
+        if not (rg.start <= b[:10] <= rg.end):
+            continue
+        k = _window_key(a, b, hours)
+        if k is not None:
+            occ[k] += 1
+            occ_wd[_d(a[:10]).weekday()][k] += 1
+    rows = changes(sid, rg.start, rg.end, ("sale",))
+    agg = [{"sold": 0.0, "value": 0.0, "tx": 0, "products": set(), "top": {}} for _ in wins]
+    grid = [[0.0] * len(wins) for _ in range(7)]
+    for r in rows:
+        k = _window_key(r["prev_ts"], r["ts"], hours)
+        if k is None:
+            continue
+        q, v = -r["delta"], -r["delta"] * _price(r)
+        a = agg[k]
+        a["sold"] += q
+        a["value"] += v
+        a["tx"] += 1
+        a["products"].add(r["product_id"])
+        t = a["top"].setdefault(r["product_id"], {"id": r["product_id"], "name": r["name"], "category": r["category"],
+                                                  "code": r["code"], "sold": 0.0, "value": 0.0})
+        t["sold"] += q
+        t["value"] += v
+        grid[_d(r["prev_ts"][:10]).weekday()][k] += v
+    total_value = sum(a["value"] for a in agg) or 1
+    res = []
+    for w, a, n in zip(wins, agg, occ):
+        per_h = a["value"] / (n * w["hours"]) if n else 0
+        res.append(w | {"occurrences": n, "sold": a["sold"], "value": a["value"], "tx": a["tx"],
+                        "products": len(a["products"]), "share": 100.0 * a["value"] / total_value,
+                        "value_per_hour": per_h, "tx_per_hour": a["tx"] / (n * w["hours"]) if n else 0,
+                        "per_window": a["value"] / n if n else 0,
+                        "top": sorted(a["top"].values(), key=lambda x: -x["value"])[:6]})
+    best = max(res, key=lambda x: x["value_per_hour"]) if any(x["occurrences"] for x in res) else None
+    # siatka dni tygodnia × okno: średnia wartość sprzedaży na godzinę
+    cells, mx = [], 0.0
+    for d in range(7):
+        row = []
+        for k, w in enumerate(wins):
+            n = occ_wd[d][k]
+            vph = grid[d][k] / (n * w["hours"]) if n else None
+            mx = max(mx, vph or 0)
+            row.append({"value": grid[d][k], "n": n, "vph": vph})
+        cells.append({"name": WEEKDAYS[d], "full": WEEKDAYS_FULL[d], "cells": row})
+    for row in cells:
+        for c in row["cells"]:
+            c["level"] = 0 if not c["vph"] else min(5, 1 + int(4.999 * c["vph"] / (mx or 1)))
+    out.update(enough=any(occ), res=res, best=best, grid=cells, readings=len(readings),
+               bars=[{"label": r["label"], "value": r["value_per_hour"],
+                      "tip": f"{r['name']} {r['label']}|{_money(r['value_per_hour'])} na godzinę|"
+                             f"{r['tx_per_hour']:.1f} spadków stanu na godzinę".replace(".", ",")} for r in res])
+    return out

@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import backup, config, db, notify, presets
 from .scraper import Crawler, StopRequested
@@ -23,7 +23,9 @@ def stop():
     _stop.set()
 
 
-def run_shop(shop_id: int) -> None:
+def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = None) -> None:
+    """slot – zaplanowany odczyt „RRRR-MM-DD GG:00” (None = ręczne pobranie),
+    reading_ts – czas zapisany przy odczycie (domyślnie slot albo bieżąca minuta)."""
     if not _lock.acquire(blocking=False):
         log.info("Pobieranie już trwa – pomijam sklep %s", shop_id)
         return
@@ -34,12 +36,14 @@ def run_shop(shop_id: int) -> None:
         shop = db.get_shop(shop_id)
         if not shop:
             return
-        day = config.today()
+        now = config.now()
+        reading_ts = reading_ts or slot or f"{now:%Y-%m-%d %H:%M}"
+        day = reading_ts[:10]
         cfg = presets.merged(shop["config"])
         status.clear()
         status.update(running=True, shop_id=shop_id, shop=shop["name"], started=time.time(),
                       source="start", page=0, found=0)
-        run_id = db.run_start(shop_id, day)
+        run_id = db.run_start(shop_id, day, slot)
 
         def progress(**kw):
             status.update(kw)
@@ -52,7 +56,7 @@ def run_shop(shop_id: int) -> None:
         if rep.mode_used == "product_pages":
             incomplete = []
         if items:
-            summ = db.save_snapshot(shop_id, day, items.values())
+            summ = db.save_snapshot(shop_id, day, items.values(), reading_ts)
             msg += (f"\nZapisano: {summ['products']} produktów, zmian: {summ['changes']}, "
                     f"nowych: {summ['new']}, korekt: {summ.get('corrections', 0)}")
         cfg["detected"] = crawler.detected
@@ -65,7 +69,10 @@ def run_shop(shop_id: int) -> None:
         if items:
             backup.daily_backup()
             try:
-                notify.after_run(db.get_shop(shop_id))
+                hours = db.run_hours()
+                # podsumowanie poprzedniego dnia wysyłamy po pierwszym zaplanowanym odczycie dnia
+                if slot and hours and int(slot[11:13]) == hours[0]:
+                    notify.after_run(db.get_shop(shop_id))
             except Exception:  # noqa: BLE001
                 log.exception("Błąd wysyłania powiadomienia")
     except StopRequested:
@@ -82,28 +89,49 @@ def run_shop(shop_id: int) -> None:
         _lock.release()
 
 
-def run_in_background(shop_id: int):
+def run_in_background(shop_id: int):  # ręczne „Pobierz teraz”
     threading.Thread(target=run_shop, args=(shop_id,), daemon=True).start()
 
 
+def due_slot(now):
+    """Ostatni zaplanowany odczyt, którego godzina już minęła: (slot_ts, datetime)."""
+    hours = db.run_hours()
+    if not hours:
+        return None, None
+    today = [h for h in hours if h <= now.hour]
+    if today:
+        dt = now.replace(hour=today[-1], minute=0, second=0, microsecond=0)
+    else:
+        dt = (now - timedelta(days=1)).replace(hour=hours[-1], minute=0, second=0, microsecond=0)
+    return dt.strftime("%Y-%m-%d %H:%M"), dt
+
+
+LATE_LIMIT = 90 * 60  # odczyt spóźniony bardziej niż 1,5 h zapisujemy z rzeczywistą godziną
+
+
 def scheduler_loop():
-    """Raz na minutę sprawdza, czy któryś sklep nie ma jeszcze dzisiejszego odczytu."""
+    """Raz na minutę sprawdza, czy któryś sklep nie ma jeszcze odczytu z ostatniej zaplanowanej godziny."""
+    started = config.now()
     while True:
         try:
             now = config.now()
-            if now.hour >= config.RUN_HOUR:
-                day = config.today()
+            slot, slot_dt = due_slot(now)
+            if slot:
                 for shop in db.list_shops():
                     if not shop["enabled"] or is_running():
                         continue
-                    # maks. 3 próby dziennie, gdy strona nie działa
-                    last = db.last_run(shop["id"])
-                    recent_fail = (last and last["day"] == day and last["finished"] and
-                                   (now - datetime.fromisoformat(last["finished"])).total_seconds() < 3600)
-                    if (not db.has_good_run(shop["id"], day) and db.tried_today(shop["id"], day) < 3
-                            and not recent_fail):
-                        log.info("Planowe pobieranie: %s", shop["name"])
-                        run_shop(shop["id"])
+                    runs = db.slot_runs(shop["id"], slot)
+                    if any(r["status"] in ("ok", "częściowy") for r in runs) or len(runs) >= 3:
+                        continue
+                    if runs and runs[-1]["finished"] and \
+                            (now - datetime.fromisoformat(runs[-1]["finished"])).total_seconds() < 3600:
+                        continue
+                    late = (now - slot_dt).total_seconds()
+                    if late > 6 * 3600 and slot_dt < started:
+                        continue  # po długiej przerwie (np. wyłączony serwer) czekamy na kolejną godzinę
+                    reading = slot if late <= LATE_LIMIT else f"{now:%Y-%m-%d %H:%M}"
+                    log.info("Planowe pobieranie %s (%s): %s", slot, reading, shop["name"])
+                    run_shop(shop["id"], slot=slot, reading_ts=reading)
         except Exception:  # noqa: BLE001
             log.exception("Błąd harmonogramu")
         time.sleep(60)

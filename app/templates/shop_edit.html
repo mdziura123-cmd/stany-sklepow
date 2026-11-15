@@ -13,7 +13,7 @@
   <label>Link startowy (strona główna albo kategoria)<input name="start_url" type="url" value="{{ cfg.start_url }}"></label>
   <label>Dodatkowe listy produktów – jeden link na linię
     <textarea name="extra_urls" rows="3" placeholder="https://sklep.pl/kategoria/inna">{{ cfg.extra_urls|join("\n") }}</textarea></label>
-  <label class="check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if shop.enabled }}> Pobieraj automatycznie codziennie o {{ RUN_HOUR }}:00</label>
+  <label class="check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if shop.enabled }}> Pobieraj automatycznie codziennie o {{ run_hours_txt }}</label>
 
   <h2 style="margin:22px 0 14px">Statystyki</h2>
   <div class="row">

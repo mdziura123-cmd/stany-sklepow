@@ -33,7 +33,7 @@
       {{ charts.line_chart(ov.daily|map(attribute='day')|list,
          [{'name': 'Sprzedane', 'var': '--series-1', 'values': ov.daily|map(attribute='sold')|list},
           {'name': 'Dostawy', 'var': '--series-2', 'values': ov.daily|map(attribute='delivered')|list}]) }}
-      <p class="hint">Każdy punkt to zmiana względem poprzedniego odczytu (o {{ RUN_HOUR }}:00), czyli głównie dzień wcześniejszy.</p>
+      <p class="hint">Każdy punkt to suma zmian z odczytów danego dnia ({{ run_hours_txt }}). Odczyt o świcie pokazuje sprzedaż z poprzedniego wieczoru i nocy.</p>
     </div>
   </section>
 

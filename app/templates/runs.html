@@ -4,9 +4,9 @@
 {% block content %}
 {% include "_shophead.html" %}
 <section class="card">
-  <div class="card-head"><h2>Historia pobrań</h2><span class="hint">Automatycznie codziennie o {{ RUN_HOUR }}:00{% if not shop.enabled %} (wstrzymane){% endif %}</span></div>
+  <div class="card-head"><h2>Historia pobrań</h2><span class="hint">Automatycznie codziennie o {{ run_hours_txt }}{% if not shop.enabled %} (wstrzymane){% endif %}</span></div>
   <div class="card-body flush tbl-wrap">
-  {% if not runs %}{{ empty('Jeszcze nie pobierano', 'Kliknij „Pobierz teraz” albo poczekaj do ' ~ RUN_HOUR ~ ':00.', 'clock') }}{% else %}
+  {% if not runs %}{{ empty('Jeszcze nie pobierano', 'Kliknij „Pobierz teraz” albo poczekaj na najbliższą godzinę: ' ~ run_hours_txt ~ '.', 'clock') }}{% else %}
   <table>
     <thead><tr><th>Start</th><th>Status</th><th class="r">Produkty</th><th class="r hide-m">Zapytania</th><th class="r">Czas</th></tr></thead>
     <tbody>

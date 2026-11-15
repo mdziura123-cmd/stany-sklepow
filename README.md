@@ -12,6 +12,9 @@ Dane są przybliżone (sprzedaż i dostawa z tego samego dnia się sumują), ale
 
 - **Przegląd** – wartość sprzedaży, sprzedane sztuki, dostawy i wartość magazynu z porównaniem
   do poprzedniego okresu, wykres dzień po dniu, produkty, które się kończą, duże zamówienia.
+- **Pora dnia** – przy kilku pobraniach dziennie (domyślnie 5:00, 16:00, 22:00): sprzedaż na godzinę
+  w oknach noc/dzień/wieczór, siatka dni tygodnia × pora dnia, co sprzedaje się o jakiej porze
+  i aktywność (liczba spadków stanu).
 - **Sprzedaż** – ranking produktów i kategorii, sprzedaż wg dni tygodnia, trendy (7 vs 7 i 30 vs 30 dni:
   co rośnie, co słabnie), duże zamówienia (jednorazowe duże spadki stanu).
 - **Dostawy** – co przyszło, kalendarz dostaw z 10 tygodni, dni tygodnia dostaw, średni odstęp
@@ -88,7 +91,7 @@ Ręcznie: w CasaOS ustawienia aplikacji → **Update** albo w terminalu
 
 | Zmienna    | Domyślnie       | Opis                                  |
 |------------|-----------------|---------------------------------------|
-| `RUN_HOUR` | `3`             | od której godziny codziennie pobierać |
+| `RUN_HOURS` | `5,16,22`      | godziny pobierania (zmienisz też w panelu: Ustawienia → Harmonogram) |
 | `UPDATE_HOUR` | `2`          | godzina aktualizacji (tylko do wyświetlania; harmonogram ustawia `WATCHTOWER_SCHEDULE`) |
 | `BACKUP_DIR` | `/data/backups` | folder kopii zapasowych (w docker-compose.yml: `/backups`) |
 | `TZ`       | `Europe/Warsaw` | strefa czasowa                        |

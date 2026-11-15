@@ -47,6 +47,15 @@
 </form>
 
 <div class="stack">
+  <form method="post" action="/settings/schedule" class="card pad form" id="harmonogram">
+    <h2 style="margin-bottom:10px">{{ icon('clock') }} Harmonogram pobierania</h2>
+    <label>Godziny pobierania (oddzielone przecinkami)
+      <input name="hours" value="{{ run_hours_txt|replace(':00', '') }}" placeholder="5, 16, 22"></label>
+    <p class="hint">Teraz: <b>{{ run_hours_txt }}</b>. Każde pobranie Ringsen to ok. 400 zapytań i 10 minut.
+      Statystyka „Pora dnia” porównuje sprzedaż w oknach między tymi godzinami. Pierwsza godzina dnia wysyła poranne podsumowanie.</p>
+    <button class="btn">{{ icon('check') }}Zapisz</button>
+  </form>
+
   <section class="card pad" id="aktualizacje">
     <h2 style="margin-bottom:10px">{{ icon('cloud') }} Aktualizacje</h2>
     <p class="small">Zainstalowana wersja: <b>{{ VERSION }}</b>{% if GIT_SHA %} (<code>{{ GIT_SHA }}</code>){% endif %}</p>

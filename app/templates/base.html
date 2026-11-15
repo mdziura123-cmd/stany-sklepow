@@ -21,6 +21,7 @@
         {% if shop is defined and shop and shop.id == s.id %}
         <div class="sub">
           <a href="/shop/{{ s.id }}/sales" class="{{ 'on' if tab == 'sales' }}">Sprzedaż</a>
+          <a href="/shop/{{ s.id }}/dayparts" class="{{ 'on' if tab == 'dayparts' }}">Pora dnia</a>
           <a href="/shop/{{ s.id }}/deliveries" class="{{ 'on' if tab == 'deliv' }}">Dostawy</a>
           <a href="/shop/{{ s.id }}/stock" class="{{ 'on' if tab == 'stock' }}">Magazyn</a>
           <a href="/shop/{{ s.id }}/offer" class="{{ 'on' if tab == 'offer' }}">Ceny i oferta</a>
@@ -36,7 +37,7 @@
     </nav>
     <div class="side-foot">
       Wersja {{ VERSION }}{% if GIT_SHA %} · {{ GIT_SHA }}{% endif %}<br>
-      Pobieranie codziennie o {{ RUN_HOUR }}:00
+      Pobieranie: {{ run_hours_txt }}
       {% if upd.behind %}<a class="upd" href="/settings#aktualizacje">{{ icon('cloud') }} Nowa wersja – instalacja o {{ UPDATE_HOUR }}:00</a>{% endif %}
     </div>
   </aside>
