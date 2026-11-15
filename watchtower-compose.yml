@@ -15,6 +15,7 @@ services:
       WATCHTOWER_SCHEDULE: "0 0 2 * * *"
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_RESTARTING: "true"
+      WATCHTOWER_UPDATE_ON_START: "true"     # sprawdza też od razu po uruchomieniu (np. po restarcie serwera)
 x-casaos:
   architectures: [amd64, arm64]
   main: watchtower

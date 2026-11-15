@@ -52,6 +52,7 @@ services:
       WATCHTOWER_SCHEDULE: "0 0 2 * * *"     # codziennie o 2:00 (przed pobieraniem o 3:00)
       WATCHTOWER_CLEANUP: "true"             # usuwa stare obrazy
       WATCHTOWER_INCLUDE_RESTARTING: "true"
+      WATCHTOWER_UPDATE_ON_START: "true"     # sprawdza też od razu po uruchomieniu (np. po restarcie serwera)
 
 x-casaos:
   architectures: [amd64, arm64]
