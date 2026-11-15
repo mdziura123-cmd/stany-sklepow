@@ -38,7 +38,10 @@ ani jako sprzedaż, ani jako dostawa.
 Plik `docker-compose.yml` zawiera drugi kontener – **Watchtower** (utrzymywana wersja `nickfedor/watchtower`).
 Codziennie o 2:00 sprawdza, czy GitHub zbudował nowy obraz aplikacji; jeśli tak, pobiera go
 i uruchamia aplikację od nowa. Baza danych i kopie zostają bez zmian. Watchtower aktualizuje tylko
-kontenery z etykietą `com.centurylinklabs.watchtower.enable=true`, więc inne aplikacje w CasaOS są bezpieczne.
+kontener o nazwie `stany-sklepow`, więc inne aplikacje w CasaOS są bezpieczne.
+
+Jeśli aplikacja jest już zainstalowana, nie musisz jej reinstalować – zaimportuj w CasaOS sam
+plik `watchtower-compose.yml` (App Store → „+” → Custom Install → Import).
 
 ## Jak to działa
 

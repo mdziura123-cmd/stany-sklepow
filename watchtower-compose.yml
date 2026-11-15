@@ -1,0 +1,28 @@
+# Sam Watchtower – dla instalacji, w których aplikacja już działa.
+# CasaOS: App Store -> „+” -> Custom Install -> Import -> wklej ten plik -> Install.
+# Codziennie o 2:00 instaluje nową wersję kontenera „stany-sklepow” (i tylko jego).
+name: stany-sklepow-watchtower
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+    container_name: stany-sklepow-watchtower
+    restart: unless-stopped
+    command: ["stany-sklepow"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: Europe/Warsaw
+      WATCHTOWER_SCHEDULE: "0 0 2 * * *"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+x-casaos:
+  architectures: [amd64, arm64]
+  main: watchtower
+  category: Utilities
+  author: mdziura123-cmd
+  developer: mdziura123-cmd
+  icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/watchtower.png
+  title:
+    en_us: Aktualizacje Stanów sklepów
+  tagline:
+    en_us: Daily auto-update for Stany sklepów

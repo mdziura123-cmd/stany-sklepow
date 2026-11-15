@@ -45,9 +45,9 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    command: ["stany-sklepow"]               # aktualizuje tylko kontener tej aplikacji
     environment:
       TZ: Europe/Warsaw
-      WATCHTOWER_LABEL_ENABLE: "true"        # aktualizuje tylko kontenery z etykietą (czyli tę aplikację)
       WATCHTOWER_SCHEDULE: "0 0 2 * * *"     # codziennie o 2:00 (przed pobieraniem o 3:00)
       WATCHTOWER_CLEANUP: "true"             # usuwa stare obrazy
       WATCHTOWER_INCLUDE_RESTARTING: "true"
