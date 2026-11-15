@@ -90,7 +90,7 @@ Ręcznie: w CasaOS ustawienia aplikacji → **Update** albo w terminalu
 |------------|-----------------|---------------------------------------|
 | `RUN_HOUR` | `3`             | od której godziny codziennie pobierać |
 | `UPDATE_HOUR` | `2`          | godzina aktualizacji (tylko do wyświetlania; harmonogram ustawia `WATCHTOWER_SCHEDULE`) |
-| `BACKUP_DIR` | `/backups`    | folder kopii zapasowych |
+| `BACKUP_DIR` | `/data/backups` | folder kopii zapasowych (w docker-compose.yml: `/backups`) |
 | `TZ`       | `Europe/Warsaw` | strefa czasowa                        |
 | `PORT`     | `8090`          | port panelu                           |
 | `DATA_DIR` | `/data`         | folder bazy danych                    |

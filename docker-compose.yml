@@ -12,6 +12,7 @@ services:
       TZ: Europe/Warsaw
       RUN_HOUR: "3"        # o której codziennie pobierać stany
       UPDATE_HOUR: "2"     # tylko informacyjnie – godzina aktualizacji z Watchtowera
+      BACKUP_DIR: /backups # bez tego kopie trafiają do /data/backups
     volumes:
       - /DATA/AppData/stany-sklepow:/data
       - /DATA/Backup/stany-sklepow:/backups
