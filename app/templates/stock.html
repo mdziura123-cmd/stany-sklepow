@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, empty, product_cell, csv, watch_btn %}
+{% block title %}{{ shop.name }} · Magazyn{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+<div class="kpis">
+  {{ kpi('Wartość magazynu', st.stock_value|money(0), dotvar='--series-1') }}
+  {{ kpi('Kończy się w 7 dni', st.supply|selectattr('days_left', 'le', 7)|list|length|string) }}
+  {{ kpi('Bez ruchu ' ~ st.dead_days ~ '+ dni', st.dead.count|default(0)|num, foot=st.dead.total_value|money(0) if st.dead.count else '') }}
+</div>
+
+<section class="card">
+  <div class="card-head"><h2>Wartość magazynu w czasie</h2></div>
+  <div class="card-body">
+    {{ charts.line_chart(st.value_series|map('first')|list, [{'name': 'Wartość', 'var': '--series-1', 'values': st.value_series|map('last')|list}], area=true, unit=' zł') }}
+    <p class="hint">Suma stan × cena netto produktów widocznych w danym odczycie.</p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ icon('clock') }} Na ile dni starczy towaru</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-sup" style="width:180px;margin:0">{{ csv(shop, 'supply') }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not st.enough %}{{ empty('Za mało danych', 'Potrzebne są co najmniej dwa dni pobierania.', 'clock') }}
+    {% elif not st.supply %}{{ empty('Nic się nie kończy', 'Żaden sprzedawany produkt nie skończy się w ciągu 60 dni.', 'check') }}{% else %}
+    <table id="t-sup">
+      <thead><tr><th></th><th>Produkt</th><th class="r">Stan</th><th class="r hide-m">Średnio / dzień</th><th class="r">Starczy na</th><th class="r hide-m">Do ok.</th></tr></thead>
+      <tbody>
+      {% for x in st.supply %}
+        <tr>
+          <td style="width:30px">{{ watch_btn(shop, x.id, x.id in watched) }}</td>
+          <td>{{ product_cell(shop, x) }}</td>
+          <td class="r">{{ x.stock|num }}</td>
+          <td class="r hide-m">{{ '%.1f'|format(x.avg)|replace('.', ',') }}</td>
+          <td class="r"><span class="pill {{ 'bad' if x.days_left < 3 else ('warn' if x.days_left <= 14 else '') }}">{{ x.days_left|days }}</span></td>
+          <td class="r hide-m muted">{{ x.until|short if x.until else '–' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <p class="hint" style="padding:0 18px 14px">Średnia z ostatnich 30 dni (albo krócej, jeśli historia jest krótsza). Gwiazdka dodaje produkt do obserwowanych.</p>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ icon('box') }} Martwy towar</h2>
+    <div class="actions">
+      <div class="seg">{% for n in (30, 60, 90) %}<a href="?dead={{ n }}" class="{{ 'on' if st.dead_days == n }}">{{ n }} dni</a>{% endfor %}</div>
+      <a class="btn ghost small" href="/shop/{{ shop.id }}/export/dead.csv?dead={{ st.dead_days }}">{{ icon('download') }}CSV</a>
+    </div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if st.dead.tracked < st.dead_days %}
+      {{ empty('Za krótka historia', 'Produkty bez ruchu przez ' ~ st.dead_days ~ ' dni da się wskazać po ' ~ st.dead_days ~ ' dniach pobierania (teraz: ' ~ st.dead.tracked ~ ').', 'clock') }}
+    {% elif not st.dead.rows %}{{ empty('Brak martwego towaru', '', 'check') }}{% else %}
+    <table>
+      <thead><tr><th>Produkt</th><th class="r">Stan</th><th class="r">Wartość</th><th class="r">Bez ruchu</th></tr></thead>
+      <tbody>
+      {% for r in st.dead.rows %}
+        <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_stock|num }}</td><td class="r"><b>{{ r.value|money }}</b></td>
+          <td class="r">{{ r.idle }} dni</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Magazyn wg kategorii</h2></div>
+  <div class="card-body flush tbl-wrap">
+    <table>
+      <thead><tr><th>Kategoria</th><th class="r">Produktów</th><th class="r hide-m">Brak towaru</th><th class="r">Wartość</th></tr></thead>
+      <tbody>
+      {% for c in st.categories %}
+        <tr><td>{{ c.name }}<div class="meter"><i style="width:{{ '%.1f'|format(c.share) }}%"></i></div></td>
+          <td class="r">{{ c.products|num }}</td><td class="r hide-m">{{ c.empty|num }}</td><td class="r"><b>{{ c.value|money(0) }}</b></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

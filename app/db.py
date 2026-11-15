@@ -1,11 +1,18 @@
-"""Baza SQLite: sklepy, produkty, dzienne odczyty stanów i historia pobrań."""
+"""Baza SQLite: sklepy, produkty, odczyty stanów, zmiany, obserwowane, ustawienia.
+
+Odczyty zapisywane są oszczędnie: nowy wiersz w `snapshots` powstaje tylko wtedy,
+gdy stan albo cena produktu się zmieniły. Każda zmiana trafia też do tabeli
+`changes` (sprzedaż, dostawa, zmiana ceny, korekta), na której liczone są statystyki.
+"""
 import json
+import logging
 import os
 import sqlite3
 import threading
 
 from . import config
 
+log = logging.getLogger("db")
 _local = threading.local()
 
 SCHEMA = """
@@ -31,7 +38,7 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS snapshots (
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
-    stock INTEGER,
+    stock REAL,
     price REAL,
     PRIMARY KEY (product_id, day)
 );
@@ -47,14 +54,50 @@ CREATE TABLE IF NOT EXISTS runs (
     requests INTEGER NOT NULL DEFAULT 0,
     message TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS changes (
+    id INTEGER PRIMARY KEY,
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    prev_day TEXT NOT NULL,
+    prev_stock REAL,
+    stock REAL,
+    delta REAL NOT NULL DEFAULT 0,
+    price REAL,
+    prev_price REAL,
+    kind TEXT NOT NULL            -- sale / delivery / price / correction
+);
+CREATE INDEX IF NOT EXISTS changes_shop_day ON changes(shop_id, day);
+CREATE INDEX IF NOT EXISTS changes_product ON changes(product_id, day);
+CREATE TABLE IF NOT EXISTS shop_days (
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    products INTEGER NOT NULL DEFAULT 0,
+    stock_value REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (shop_id, day)
+);
+CREATE TABLE IF NOT EXISTS watch (
+    product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    min_stock REAL,
+    created TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+PRODUCT_COLUMNS = {
+    "cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
+}
 
 
 def conn() -> sqlite3.Connection:
     c = getattr(_local, "c", None)
     if c is None:
         os.makedirs(config.DATA_DIR, exist_ok=True)
-        c = sqlite3.connect(os.path.join(config.DATA_DIR, "stany.db"), timeout=60)
+        c = sqlite3.connect(db_path(), timeout=60)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA foreign_keys=ON")
@@ -62,8 +105,101 @@ def conn() -> sqlite3.Connection:
     return c
 
 
+def db_path() -> str:
+    return os.path.join(config.DATA_DIR, "stany.db")
+
+
 def init():
-    conn().executescript(SCHEMA)
+    c = conn()
+    c.executescript(SCHEMA)
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(products)")}
+    added = False
+    for name, typ in PRODUCT_COLUMNS.items():
+        if name not in cols:
+            c.execute(f"ALTER TABLE products ADD COLUMN {name} {typ}")
+            added = True
+    c.commit()
+    if added or c.execute("SELECT value FROM settings WHERE key='schema'").fetchone() is None:
+        migrate_v2()
+
+
+def migrate_v2():
+    """Jednorazowo przelicza istniejące odczyty (z wersji 1) na tabele zmian."""
+    c = conn()
+    log.info("Migracja bazy do wersji 2…")
+    with c:
+        c.execute("DELETE FROM changes")
+        c.execute("""
+            INSERT INTO changes(shop_id, product_id, day, prev_day, prev_stock, stock, delta, price, prev_price, kind)
+            SELECT shop_id, product_id, day, prev_day, prev_stock, stock,
+                   COALESCE(stock - prev_stock, 0), price, prev_price,
+                   CASE WHEN stock < prev_stock THEN 'sale'
+                        WHEN stock > prev_stock THEN 'delivery' ELSE 'price' END
+            FROM (
+                SELECT p.shop_id, s.product_id, s.day, s.stock, s.price,
+                       LAG(s.stock) OVER w AS prev_stock, LAG(s.day) OVER w AS prev_day,
+                       LAG(s.price) OVER w AS prev_price
+                FROM snapshots s JOIN products p ON p.id = s.product_id
+                WINDOW w AS (PARTITION BY s.product_id ORDER BY s.day)
+            )
+            WHERE prev_day IS NOT NULL AND stock IS NOT NULL AND prev_stock IS NOT NULL
+              AND (stock <> prev_stock OR ABS(COALESCE(price, 0) - COALESCE(prev_price, 0)) > 0.0001)
+        """)
+        c.execute("""
+            UPDATE products SET
+              cur_stock = (SELECT stock FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+              cur_price = (SELECT price FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+              cur_day = (SELECT day FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+              stock_since = COALESCE((SELECT MAX(day) FROM changes ch WHERE ch.product_id = products.id
+                                      AND ch.kind <> 'price'), first_seen)
+        """)
+        c.execute("DELETE FROM shop_days")
+        c.execute("""
+            INSERT INTO shop_days(shop_id, day, products, stock_value)
+            SELECT p.shop_id, s.day, COUNT(*), COALESCE(SUM(s.stock * s.price), 0)
+            FROM snapshots s JOIN products p ON p.id = s.product_id
+            GROUP BY p.shop_id, s.day
+        """)
+        _mark_reversals(c, None)
+        c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '2')")
+    log.info("Migracja zakończona.")
+
+
+def _mark_reversals(c, day):
+    """Korekty: stan spadł i następnego odczytu wrócił dokładnie do poprzedniej wartości
+    (albo odwrotnie). Takie pary nie są liczone jako sprzedaż ani dostawa."""
+    sql = """
+        SELECT a.id AS a_id, b.id AS b_id FROM changes a
+        JOIN changes b ON b.product_id = a.product_id AND b.prev_day = a.day
+        WHERE a.kind IN ('sale','delivery') AND b.kind IN ('sale','delivery')
+          AND ABS(a.delta + b.delta) < 0.0001 AND a.delta <> 0
+          AND NOT EXISTS (SELECT 1 FROM shop_days d WHERE d.shop_id = b.shop_id
+                          AND d.day > a.day AND d.day < b.day)
+    """
+    args: tuple = ()
+    if day:
+        sql += " AND b.day = ?"
+        args = (day,)
+    pairs = c.execute(sql, args).fetchall()
+    for r in pairs:
+        c.execute("UPDATE changes SET kind='correction' WHERE id IN (?,?)", (r["a_id"], r["b_id"]))
+    return len(pairs)
+
+
+# ---------------------------------------------------------------- ustawienia
+
+def get_setting(key: str, default=None):
+    r = conn().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    if r is None:
+        return default
+    try:
+        return json.loads(r["value"])
+    except ValueError:
+        return r["value"]
+
+
+def set_setting(key: str, value):
+    conn().execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)", (key, json.dumps(value)))
     conn().commit()
 
 
@@ -139,6 +275,12 @@ def last_run(shop_id: int):
     return conn().execute("SELECT * FROM runs WHERE shop_id=? ORDER BY id DESC LIMIT 1", (shop_id,)).fetchone()
 
 
+def last_good_run(shop_id: int):
+    return conn().execute(
+        "SELECT * FROM runs WHERE shop_id=? AND status IN ('ok','częściowy') ORDER BY id DESC LIMIT 1",
+        (shop_id,)).fetchone()
+
+
 def has_good_run(shop_id: int, day: str) -> bool:
     return conn().execute(
         "SELECT 1 FROM runs WHERE shop_id=? AND day=? AND status IN ('ok','częściowy') LIMIT 1",
@@ -156,37 +298,110 @@ def mark_stale_runs():
     conn().commit()
 
 
-# ---------------------------------------------------------------- odczyty
+# ---------------------------------------------------------------- zapis odczytu
 
-def save_snapshot(shop_id: int, day: str, items) -> int:
+def _rollback_day(c, shop_id: int, day: str):
+    """Ponowne pobranie tego samego dnia: cofa wcześniejszy zapis z tego dnia."""
+    # korekty sparowane ze zmianą z cofanego dnia wracają do zwykłego rodzaju
+    c.execute("""UPDATE changes SET kind = CASE WHEN delta < 0 THEN 'sale' WHEN delta > 0 THEN 'delivery'
+                 ELSE 'price' END
+                 WHERE kind='correction' AND id IN (
+                   SELECT a.id FROM changes a JOIN changes b
+                     ON b.product_id = a.product_id AND b.prev_day = a.day
+                   WHERE b.shop_id=? AND b.day=?)""", (shop_id, day))
+    c.execute("DELETE FROM changes WHERE shop_id=? AND day=?", (shop_id, day))
+    c.execute("DELETE FROM snapshots WHERE day=? AND product_id IN (SELECT id FROM products WHERE shop_id=?)",
+              (day, shop_id))
+    c.execute("""
+        UPDATE products SET
+          cur_stock = (SELECT stock FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+          cur_price = (SELECT price FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+          cur_day = (SELECT day FROM snapshots s WHERE s.product_id = products.id ORDER BY day DESC LIMIT 1),
+          stock_since = COALESCE((SELECT MAX(day) FROM changes ch WHERE ch.product_id = products.id
+                                  AND ch.kind <> 'price'), first_seen),
+          last_seen = COALESCE((SELECT MAX(day) FROM shop_days d WHERE d.shop_id = products.shop_id
+                                AND d.day < ?), first_seen)
+        WHERE shop_id = ? AND (cur_day = ? OR last_seen = ?)
+    """, (day, shop_id, day, day))
+    c.execute("DELETE FROM shop_days WHERE shop_id=? AND day=?", (shop_id, day))
+
+
+def save_snapshot(shop_id: int, day: str, items) -> dict:
+    """Zapisuje odczyt dnia i zwraca podsumowanie zmian."""
     c = conn()
+    items = [it for it in items if it.stock is not None]
+    summary = {"new": 0, "changes": 0, "products": len(items)}
     with c:
+        if c.execute("SELECT 1 FROM products WHERE shop_id=? AND (cur_day=? OR last_seen=?) LIMIT 1",
+                     (shop_id, day, day)).fetchone():
+            _rollback_day(c, shop_id, day)
+        known = {r["key"]: r for r in c.execute(
+            "SELECT id, key, cur_stock, cur_price, cur_day FROM products WHERE shop_id=?", (shop_id,))}
         for it in items:
-            pid = c.execute(
-                """INSERT INTO products(shop_id, key, name, url, code, category, first_seen, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?)
-                   ON CONFLICT(shop_id, key) DO UPDATE SET
-                     name=excluded.name, url=excluded.url,
-                     code=CASE WHEN excluded.code<>'' THEN excluded.code ELSE products.code END,
-                     category=CASE WHEN excluded.category<>'' THEN excluded.category ELSE products.category END,
-                     last_seen=excluded.last_seen
-                   RETURNING id""",
-                (shop_id, it.key, it.name, it.url, it.code, it.category, day, day),
-            ).fetchone()[0]
+            old = known.get(it.key)
+            if old is None or old["cur_day"] is None:
+                if old is None:
+                    pid = c.execute(
+                        """INSERT INTO products(shop_id, key, name, url, code, category, first_seen, last_seen,
+                                                cur_stock, cur_price, cur_day, stock_since)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (shop_id, it.key, it.name, it.url, it.code, it.category, day, day,
+                         it.stock, it.price, day, day)).lastrowid
+                    summary["new"] += 1
+                else:
+                    pid = old["id"]
+                    c.execute("""UPDATE products SET name=?, url=?, last_seen=?, cur_stock=?, cur_price=?,
+                                 cur_day=?, stock_since=COALESCE(stock_since, ?) WHERE id=?""",
+                              (it.name, it.url, day, it.stock, it.price, day, day, pid))
+                c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
+                          (pid, day, it.stock, it.price))
+                continue
+            pid = old["id"]
+            stock_changed = old["cur_stock"] is None or abs(it.stock - old["cur_stock"]) > 1e-9
+            price_changed = (it.price is not None and old["cur_price"] is not None
+                             and abs(it.price - old["cur_price"]) > 0.0001)
             c.execute(
-                "INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
-                (pid, day, it.stock, it.price),
-            )
-    return len(items)
+                """UPDATE products SET name=?, url=?, last_seen=?,
+                     code=CASE WHEN ?<>'' THEN ? ELSE code END,
+                     category=CASE WHEN ?<>'' THEN ? ELSE category END
+                   WHERE id=?""",
+                (it.name, it.url, day, it.code, it.code, it.category, it.category, pid))
+            if not (stock_changed or price_changed):
+                continue
+            delta = 0.0 if old["cur_stock"] is None else it.stock - old["cur_stock"]
+            kind = "sale" if delta < 0 else ("delivery" if delta > 0 else "price")
+            c.execute(
+                """INSERT INTO changes(shop_id, product_id, day, prev_day, prev_stock, stock, delta,
+                                       price, prev_price, kind) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (shop_id, pid, day, old["cur_day"], old["cur_stock"], it.stock, delta,
+                 it.price if it.price is not None else old["cur_price"], old["cur_price"], kind))
+            c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
+                      (pid, day, it.stock, it.price))
+            c.execute("""UPDATE products SET cur_stock=?, cur_price=COALESCE(?, cur_price), cur_day=?,
+                         stock_since=CASE WHEN ? THEN ? ELSE stock_since END WHERE id=?""",
+                      (it.stock, it.price, day, 1 if stock_changed else 0, day, pid))
+            summary["changes"] += 1
+        summary["corrections"] = _mark_reversals(c, day)
+        r = c.execute("""SELECT COUNT(*), COALESCE(SUM(cur_stock * COALESCE(cur_price, 0)), 0)
+                         FROM products WHERE shop_id=? AND last_seen=?""", (shop_id, day)).fetchone()
+        c.execute("INSERT OR REPLACE INTO shop_days(shop_id, day, products, stock_value) VALUES (?,?,?,?)",
+                  (shop_id, day, r[0], r[1]))
+    return summary
 
 
-def snapshot_days(shop_id: int) -> list[str]:
-    rows = conn().execute(
-        """SELECT DISTINCT s.day FROM snapshots s JOIN products p ON p.id=s.product_id
-           WHERE p.shop_id=? ORDER BY s.day""",
-        (shop_id,),
-    )
-    return [r[0] for r in rows]
+# ---------------------------------------------------------------- odczyt
+
+def shop_days(shop_id: int) -> list[str]:
+    return [r[0] for r in conn().execute("SELECT day FROM shop_days WHERE shop_id=? ORDER BY day", (shop_id,))]
+
+
+def shop_day_rows(shop_id: int, d_from: str | None = None):
+    sql = "SELECT * FROM shop_days WHERE shop_id=?"
+    args: list = [shop_id]
+    if d_from:
+        sql += " AND day>=?"
+        args.append(d_from)
+    return conn().execute(sql + " ORDER BY day", args).fetchall()
 
 
 def product(shop_id: int, pid: int):
@@ -197,10 +412,15 @@ def product_history(pid: int):
     return conn().execute("SELECT day, stock, price FROM snapshots WHERE product_id=? ORDER BY day", (pid,)).fetchall()
 
 
-def products_current(shop_id: int, q: str = "", category: str = "", limit: int = 200, offset: int = 0):
-    sql = """SELECT p.*, s.stock, s.price, s.day FROM products p
-             LEFT JOIN snapshots s ON s.product_id=p.id
-               AND s.day=(SELECT MAX(day) FROM snapshots WHERE product_id=p.id)
+def product_changes(pid: int):
+    return conn().execute("SELECT * FROM changes WHERE product_id=? ORDER BY day DESC", (pid,)).fetchall()
+
+
+def products_current(shop_id: int, q: str = "", category: str = "", limit: int = 100, offset: int = 0,
+                     sort: str = "name"):
+    sql = """SELECT p.*, p.cur_stock AS stock, p.cur_price AS price, p.last_seen AS day,
+                    (w.product_id IS NOT NULL) AS watched
+             FROM products p LEFT JOIN watch w ON w.product_id = p.id
              WHERE p.shop_id=?"""
     args: list = [shop_id]
     if q:
@@ -210,7 +430,9 @@ def products_current(shop_id: int, q: str = "", category: str = "", limit: int =
         sql += " AND p.category=?"
         args.append(category)
     count = conn().execute(f"SELECT COUNT(*) FROM ({sql})", args).fetchone()[0]
-    sql += " ORDER BY p.name LIMIT ? OFFSET ?"
+    order = {"name": "p.name", "stock": "p.cur_stock DESC", "stock_asc": "p.cur_stock",
+             "value": "p.cur_stock * COALESCE(p.cur_price,0) DESC", "price": "p.cur_price DESC"}.get(sort, "p.name")
+    sql += f" ORDER BY {order} LIMIT ? OFFSET ?"
     return conn().execute(sql, args + [limit, offset]).fetchall(), count
 
 
@@ -222,3 +444,26 @@ def categories(shop_id: int) -> list[str]:
 def counts(shop_id: int) -> dict:
     r = conn().execute("SELECT COUNT(*) FROM products WHERE shop_id=?", (shop_id,)).fetchone()
     return {"products": r[0]}
+
+
+# ---------------------------------------------------------------- obserwowane
+
+def watch_list(shop_id: int):
+    return conn().execute(
+        """SELECT p.*, w.min_stock, w.created AS watched_since FROM watch w
+           JOIN products p ON p.id = w.product_id WHERE w.shop_id=? ORDER BY p.name""", (shop_id,)).fetchall()
+
+
+def watch_ids(shop_id: int) -> set[int]:
+    return {r[0] for r in conn().execute("SELECT product_id FROM watch WHERE shop_id=?", (shop_id,))}
+
+
+def set_watch(shop_id: int, pid: int, on: bool, min_stock=None):
+    c = conn()
+    if on:
+        c.execute("""INSERT INTO watch(product_id, shop_id, min_stock, created) VALUES (?,?,?,?)
+                     ON CONFLICT(product_id) DO UPDATE SET min_stock=excluded.min_stock""",
+                  (pid, shop_id, min_stock, config.today()))
+    else:
+        c.execute("DELETE FROM watch WHERE product_id=?", (pid,))
+    c.commit()

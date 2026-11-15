@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, periods, empty, product_cell, not_enough, csv, delta %}
+{% block title %}{{ shop.name }} · Sprzedaż{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+<div class="toolbar">
+  {{ periods(period, '/shop/' ~ shop.id ~ '/sales') }}
+  {% if s.enough %}<span class="range">{{ s.range.label }}</span>{% endif %}
+</div>
+{% if not s.enough %}{{ not_enough(s.range) }}{% else %}
+<div class="kpis">
+  {{ kpi('Wartość sprzedaży (netto)', s.t.value|money(0), dotvar='--series-1') }}
+  {{ kpi('Sprzedane sztuki', s.t.sold|num) }}
+  {{ kpi('Produkty ze sprzedażą', s.t.sold_products|num) }}
+  {{ kpi('Duże zamówienia', s.big|length|string) }}
+</div>
+
+<div class="grid g-2-1">
+  <section class="card">
+    <div class="card-head"><h2>Wartość sprzedaży dzień po dniu</h2></div>
+    <div class="card-body">
+      {{ charts.line_chart(s.daily|map(attribute='day')|list,
+         [{'name': 'Wartość', 'var': '--series-1', 'values': s.daily|map(attribute='value')|list}], area=true, unit=' zł') }}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Dni tygodnia</h2>{{ csv(shop, 'weekdays', period) }}</div>
+    <div class="card-body">
+      {{ charts.bar_chart(s.weekday_items, width=380, height=230) }}
+      <p class="hint">Średnia wartość sprzedaży na dzień tygodnia (zmiany przypisane do dnia przed odczytem).</p>
+    </div>
+  </section>
+</div>
+
+<section class="card mt">
+  <div class="card-head">
+    <h2>Produkty</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-top" style="width:180px;margin:0">{{ csv(shop, 'sales', period) }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not s.top %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
+    <table id="t-top">
+      <thead><tr><th></th><th>Produkt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Spadków</th><th class="r hide-m">Stan</th></tr></thead>
+      <tbody>
+      {% for p in s.top %}
+        <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td><td class="r">{{ p.sold|num }}</td>
+          <td class="r"><b>{{ p.value|money }}</b></td><td class="r hide-m">{{ p.orders }}</td><td class="r hide-m">{{ p.stock|num }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" id="kategorie">
+  <div class="card-head"><h2>Kategorie</h2>{{ csv(shop, 'categories', period) }}</div>
+  <div class="card-body flush tbl-wrap">
+    {% if not s.categories %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
+    <table>
+      <thead><tr><th>Kategoria</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r">Udział</th><th class="r hide-m">Produktów</th></tr></thead>
+      <tbody>
+      {% for c in s.categories %}
+        <tr><td>{{ c.name }}<div class="meter"><i style="width:{{ '%.1f'|format(c.share) }}%"></i></div></td>
+          <td class="r">{{ c.sold|num }}</td><td class="r"><b>{{ c.value|money }}</b></td>
+          <td class="r">{{ '%.1f'|format(c.share)|replace('.', ',') }}%</td><td class="r hide-m">{{ c.products }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+<h2 style="margin:26px 0 12px">{{ icon('trend') }} Trendy</h2>
+<div class="grid g2">
+{% for n in (7, 30) %}
+  {% set tr = s.trends[n] %}
+  <section class="card">
+    <div class="card-head"><h2>Ostatnie {{ n }} dni vs poprzednie {{ n }}</h2></div>
+    <div class="card-body flush">
+      {% if not tr.available %}
+        {{ empty('Za krótka historia', 'Trend ' ~ n ~ '-dniowy pojawi się po ' ~ (2*n) ~ ' dniach pobierania.', 'clock') }}
+      {% else %}
+      <table>
+        <thead><tr><th>Rośnie</th><th class="r">Teraz</th><th class="r">Wcześniej</th><th class="r">Zmiana</th></tr></thead>
+        <tbody>
+        {% for r in tr.up[:6] %}
+          <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
+            <td class="r">{{ delta(r.pct) if r.pct is not none else '<span class="pill ok">nowe</span>'|safe }}</td></tr>
+        {% else %}<tr><td colspan="4" class="muted">Brak</td></tr>{% endfor %}
+        </tbody>
+        <thead><tr><th>Słabnie</th><th></th><th></th><th></th></tr></thead>
+        <tbody>
+        {% for r in tr.down[:6] %}
+          <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
+            <td class="r">{{ delta(r.pct) }}</td></tr>
+        {% else %}<tr><td colspan="4" class="muted">Brak</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</div>
+{% if s.trends[7].available and s.trends[7].cats %}
+<section class="card mt">
+  <div class="card-head"><h2>Kategorie – zmiana tydzień do tygodnia</h2></div>
+  <div class="card-body flush">
+    <table>
+      <thead><tr><th>Kategoria</th><th class="r">Ostatnie 7 dni</th><th class="r">Poprzednie 7</th><th class="r">Zmiana</th></tr></thead>
+      <tbody>
+      {% for c in s.trends[7].cats %}
+        <tr><td>{{ c.name }}</td><td class="r">{{ c.cur|money(0) }}</td><td class="r muted">{{ c.prev|money(0) }}</td><td class="r">{{ delta(c.pct) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card mt" id="duze">
+  <div class="card-head">
+    <h2>{{ icon('zap') }} Duże zamówienia</h2>
+    <div class="actions"><span class="hint">≥ {{ (shop.config.stats or {}).big_value or 500 }} zł albo ≥ {{ (shop.config.stats or {}).big_mult or 4 }}× typowa sprzedaż</span>{{ csv(shop, 'big', period) }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not s.big %}{{ empty('Brak dużych zamówień w tym okresie', '', 'zap') }}{% else %}
+    <table>
+      <thead><tr><th>Produkt</th><th class="r">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th><th class="r hide-m">Stan po</th></tr></thead>
+      <tbody>
+      {% for b in s.big %}
+        <tr><td>{{ product_cell(shop, b) }}</td><td class="r">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
+          <td class="r"><b>{{ b.value|money }}</b></td><td class="r hide-m muted">{{ b.typical|num if b.typical else '–' }}</td><td class="r hide-m">{{ b.stock|num }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

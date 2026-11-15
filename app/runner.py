@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import datetime
 
-from . import config, db, presets
+from . import backup, config, db, notify, presets
 from .scraper import Crawler, StopRequested
 
 log = logging.getLogger("runner")
@@ -51,11 +51,10 @@ def run_shop(shop_id: int) -> None:
         incomplete = [s for s in rep.sources if s.get("incomplete") or s.get("error")]
         if rep.mode_used == "product_pages":
             incomplete = []
-        if incomplete:
-            msg += "\nNiepełne listy: " + ", ".join(f"{s['label']} ({s['found']}/{s.get('total') or '?'})"
-                                                  for s in incomplete)
         if items:
-            db.save_snapshot(shop_id, day, items.values())
+            summ = db.save_snapshot(shop_id, day, items.values())
+            msg += (f"\nZapisano: {summ['products']} produktów, zmian: {summ['changes']}, "
+                    f"nowych: {summ['new']}, korekt: {summ.get('corrections', 0)}")
         cfg["detected"] = crawler.detected
         db.update_shop(shop_id, cfg=cfg)
         st = "błąd" if not items else ("częściowy" if incomplete else "ok")
@@ -63,6 +62,12 @@ def run_shop(shop_id: int) -> None:
             msg += "\nNie znaleziono żadnych produktów ze stanem."
         db.run_end(run_id, st, len(items), crawler.fetcher.requests, msg.strip())
         log.info("Sklep %s: %s, produktów %d, zapytań %d", shop["name"], st, len(items), crawler.fetcher.requests)
+        if items:
+            backup.daily_backup()
+            try:
+                notify.after_run(db.get_shop(shop_id))
+            except Exception:  # noqa: BLE001
+                log.exception("Błąd wysyłania powiadomienia")
     except StopRequested:
         if run_id:
             db.run_end(run_id, "przerwany", 0, crawler.fetcher.requests if crawler else 0, "Zatrzymano ręcznie.")

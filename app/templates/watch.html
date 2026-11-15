@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, empty, product_cell, watch_btn %}
+{% block title %}{{ shop.name }} · Obserwowane{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+{% set alerts = rows|selectattr('alerts')|list %}
+{% if alerts %}
+<div class="alert warn">{{ icon('bell') }}<div><b>{{ alerts|length }} {{ 'produkt wymaga' if alerts|length == 1 else 'produkty wymagają' }} uwagi:</b>
+  {% for r in alerts[:6] %}{{ r.name }} ({{ r.alerts|join(', ') }}){{ ', ' if not loop.last }}{% endfor %}</div></div>
+{% endif %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('star') }} Obserwowane produkty</h2><span class="hint">Dodawaj gwiazdką na stronie produktu, w zakładce Magazyn albo Produkty.</span></div>
+  <div class="card-body flush tbl-wrap">
+    {% if not rows %}
+      {{ empty('Nie obserwujesz jeszcze żadnych produktów', 'Kliknij gwiazdkę przy produkcie, a pojawi się tutaj. Możesz ustawić próg minimalnego stanu – dostaniesz alert, gdy stan spadnie poniżej.', 'star') }}
+    {% else %}
+    <table>
+      <thead><tr><th></th><th>Produkt</th><th class="r">Stan</th><th class="r hide-m">Sprzedaż 7 dni</th><th class="r">Starczy na</th><th class="r">Próg</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td style="width:30px">{{ watch_btn(shop, r.id, true) }}</td>
+          <td>{{ product_cell(shop, r) }}</td>
+          <td class="r"><b>{{ r.cur_stock|num }}</b></td>
+          <td class="r hide-m">{{ r.week|num }}</td>
+          <td class="r">{% if r.days_left is not none %}{{ r.days_left|days }}{% else %}<span class="muted">–</span>{% endif %}</td>
+          <td class="r">
+            <form method="post" action="/shop/{{ shop.id }}/watch/{{ r.id }}" class="inline-input" style="justify-content:flex-end">
+              <input type="hidden" name="action" value="set">
+              <input name="min_stock" inputmode="decimal" value="{{ r.min_stock|num if r.min_stock is not none else '' }}" placeholder="brak" aria-label="Minimalny stan">
+              <button class="btn ghost small" title="Zapisz próg">{{ icon('check') }}</button>
+            </form>
+          </td>
+          <td>{% for a in r.alerts %}<span class="pill {{ 'bad' if 'brak' in a or 'nie ma' in a else 'warn' }}">{{ icon('alert') }}{{ a }}</span> {% else %}<span class="pill ok">{{ icon('check') }}ok</span>{% endfor %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

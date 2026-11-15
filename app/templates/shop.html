@@ -1,114 +1,114 @@
 {% extends "base.html" %}
-{% block title %}{{ shop.name }} – analiza{% endblock %}
+{% from "_ui.html" import icon, kpi, periods, empty, product_cell, not_enough %}
+{% block title %}{{ shop.name }} · Przegląd{% endblock %}
 {% block content %}
-{% set tab = 'dash' %}{% include "_shopnav.html" %}
+{% include "_shophead.html" %}
 
-<div class="periods">
-  {% for k, v in PERIODS.items() %}
-  <a href="?period={{ k }}" class="{{ 'on' if period==k }}">{{ v }}</a>
-  {% endfor %}
+<div class="toolbar">
+  {{ periods(period, '/shop/' ~ shop.id) }}
+  {% if ov.enough %}<span class="range">{{ ov.range.label }} · porównanie z poprzednim okresem</span>{% endif %}
 </div>
 
-{% if not a.enough %}
-<div class="card empty">
-  <p><b>Za mało danych do analizy.</b></p>
-  <p>Aplikacja porównuje kolejne dni, więc potrzebne są co najmniej dwa pobrania z różnych dni.
-     Pobrań jest teraz: {{ a.days|length }}.</p>
-  {% if last %}<p class="small">Ostatnie pobranie: {{ last.started[:16]|replace("T"," ") }} –
-     <span class="st st-{{ last.status }}">{{ last.status }}</span>, produktów: {{ last.found|int }}</p>{% endif %}
-</div>
-{% else %}
-<p class="muted small">Zmiany od {{ a.from }} do {{ a.to }} (porównanie z odczytem z dnia poprzedniego).
-  Sprzedaż = spadek stanu, dostawa = wzrost stanu. Wartości są przybliżone.</p>
-
+{% if not ov.enough %}
 <div class="kpis">
-  <div class="kpi"><span>Sprzedane sztuki</span><b>{{ a.sold_units|int }}</b></div>
-  <div class="kpi"><span>Wartość sprzedaży (netto)</span><b>{{ a.sold_value|money }}</b></div>
-  <div class="kpi"><span>Produkty ze sprzedażą</span><b>{{ a.sold_products|int }}</b></div>
-  <div class="kpi"><span>Sztuki w dostawach</span><b>{{ a.delivered_units|int }}</b></div>
-  <div class="kpi"><span>Produkty w dostawach</span><b>{{ a.delivery_products|int }}</b></div>
+  {{ kpi('Produktów', ov.products|num) }}
+  {{ kpi('Wartość magazynu', ov.stock_value|money(0)) }}
+</div>
+{{ not_enough(ov.range) }}
+{% else %}
+<div class="kpis">
+  {{ kpi('Wartość sprzedaży (netto)', ov.t.value|money(0), ov.delta.value, dotvar='--series-1') }}
+  {{ kpi('Sprzedane sztuki', ov.t.sold|num, ov.delta.sold, ov.t.sold_products|num ~ ' produktów') }}
+  {{ kpi('Przybyło w dostawach', ov.t.delivered|num, ov.delta.delivered, ov.t.deliv_products|num ~ ' produktów', dotvar='--series-2') }}
+  {{ kpi('Wartość magazynu', ov.stock_value|money(0), ov.delta.stock_value, ov.products|num ~ ' produktów') }}
 </div>
 
-{% if a.daily|length > 1 %}
-<section class="card">
-  <h2>Dzień po dniu</h2>
-  <div class="daily">
-  {% for d in a.daily %}
-    <div class="day" title="{{ d.day }}: sprzedane {{ d.sold }}, dostawy {{ d.delivered }}">
-      <div class="bars">
-        <div class="bar sold" style="height: {{ '%.1f'|format(d.sold_pct) }}%"></div>
-        <div class="bar deliv" style="height: {{ '%.1f'|format(d.delivered_pct) }}%"></div>
-      </div>
-      <div class="lbl">{{ d.day[5:] }}</div>
+<div class="grid g-2-1">
+  <section class="card">
+    <div class="card-head">
+      <h2>Sprzedaż i dostawy dzień po dniu</h2>
+      <div class="legend"><span><i style="background:var(--series-1)"></i>sprzedane szt.</span><span><i style="background:var(--series-2)"></i>dostawy szt.</span></div>
     </div>
-  {% endfor %}
+    <div class="card-body">
+      {{ charts.line_chart(ov.daily|map(attribute='day')|list,
+         [{'name': 'Sprzedane', 'var': '--series-1', 'values': ov.daily|map(attribute='sold')|list},
+          {'name': 'Dostawy', 'var': '--series-2', 'values': ov.daily|map(attribute='delivered')|list}]) }}
+      <p class="hint">Każdy punkt to zmiana względem poprzedniego odczytu (o {{ RUN_HOUR }}:00), czyli głównie dzień wcześniejszy.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('alert') }} Kończy się</h2><a class="small" href="/shop/{{ shop.id }}/stock">wszystkie →</a></div>
+    <div class="card-body flush">
+      {% if not ov.low %}{{ empty('Nic się nie kończy', 'Żaden sprzedawany produkt nie skończy się w ciągu 14 dni.', 'check') }}{% else %}
+      <table>
+        <tbody>
+        {% for x in ov.low %}
+          <tr>
+            <td>{{ product_cell(shop, x) }}</td>
+            <td class="r"><span class="pill {{ 'bad' if x.days_left < 3 else 'warn' }}">{{ x.days_left|days }}</span>
+              <div class="meta">stan {{ x.stock|num }}</div></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="grid g2 mt">
+  <section class="card">
+    <div class="card-head"><h2>Najlepiej sprzedające się</h2><a class="small" href="/shop/{{ shop.id }}/sales?period={{ period }}">więcej →</a></div>
+    <div class="card-body flush">
+      {% if not ov.top %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
+      <table>
+        <thead><tr><th></th><th>Produkt</th><th class="r">Szt.</th><th class="r">Wartość</th></tr></thead>
+        <tbody>
+        {% for p in ov.top %}
+          <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td>
+            <td class="r">{{ p.sold|num }}</td><td class="r"><b>{{ p.value|money }}</b></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Kategorie</h2><a class="small" href="/shop/{{ shop.id }}/sales?period={{ period }}#kategorie">więcej →</a></div>
+    <div class="card-body flush">
+      {% if not ov.categories %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
+      <table>
+        <thead><tr><th>Kategoria</th><th class="r">Szt.</th><th class="r">Wartość</th></tr></thead>
+        <tbody>
+        {% for c in ov.categories %}
+          <tr><td>{{ c.name }}<div class="meter"><i style="width:{{ '%.1f'|format(c.share) }}%"></i></div></td>
+            <td class="r">{{ c.sold|num }}</td>
+            <td class="r"><b>{{ c.value|money }}</b><div class="meta">{{ '%.0f'|format(c.share) }}%</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+{% if ov.big %}
+<section class="card mt">
+  <div class="card-head"><h2>{{ icon('zap') }} Duże zamówienia</h2><a class="small" href="/shop/{{ shop.id }}/sales?period={{ period }}#duze">więcej →</a></div>
+  <div class="card-body flush">
+    <table>
+      <thead><tr><th>Produkt</th><th class="r hide-m">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th></tr></thead>
+      <tbody>
+      {% for b in ov.big %}
+        <tr><td>{{ product_cell(shop, b) }}</td><td class="r hide-m">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
+          <td class="r"><b>{{ b.value|money }}</b></td><td class="r hide-m muted">{{ b.typical|num if b.typical else '–' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
-  <div class="legend"><span class="sw sold"></span> sprzedane <span class="sw deliv"></span> dostawy</div>
 </section>
 {% endif %}
-
-<div class="cols">
-<section class="card">
-  <h2>Najlepiej sprzedające się</h2>
-  {% if not a.top %}<p class="muted">Brak sprzedaży w tym okresie.</p>{% else %}
-  <table>
-    <thead><tr><th>#</th><th>Produkt</th><th class="r">Sprzed.</th><th class="r">Wartość</th><th class="r">Stan</th></tr></thead>
-    <tbody>
-    {% for p in a.top %}
-      <tr>
-        <td class="muted">{{ loop.index }}</td>
-        <td><a href="/shop/{{ shop.id }}/product/{{ p.id }}">{{ p.name }}</a>
-          <div class="muted small">{{ p.category }}{% if p.code %} · {{ p.code }}{% endif %}</div></td>
-        <td class="r"><b>{{ p.sold|int }}</b></td>
-        <td class="r">{{ p.value|money }}</td>
-        <td class="r">{{ p.stock|int }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Kategorie</h2>
-  {% if not a.categories %}<p class="muted">Brak sprzedaży w tym okresie.</p>{% else %}
-  <table>
-    <thead><tr><th>Kategoria</th><th class="r">Sztuki</th><th class="r">Wartość</th><th class="r">Prod.</th></tr></thead>
-    <tbody>
-    {% for c in a.categories %}
-      <tr>
-        <td>{{ c.name }}
-          <div class="meter"><div style="width: {{ '%.1f'|format(c.share) }}%"></div></div></td>
-        <td class="r"><b>{{ c.sold|int }}</b><div class="muted small">{{ '%.0f'|format(c.share) }}%</div></td>
-        <td class="r">{{ c.value|money }}</td>
-        <td class="r">{{ c.products }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-</section>
-</div>
-
-<section class="card">
-  <h2>Dostawy (wzrosty stanu)</h2>
-  {% if not a.deliveries %}<p class="muted">Brak dostaw w tym okresie.</p>{% else %}
-  <table>
-    <thead><tr><th>Dzień</th><th>Produkt</th><th class="r">Przybyło</th><th class="r">Stan</th></tr></thead>
-    <tbody>
-    {% for d in a.deliveries[:300] %}
-      <tr>
-        <td class="nowrap">{{ d.day }}</td>
-        <td><a href="/shop/{{ shop.id }}/product/{{ d.product_id }}">{{ d.name }}</a>
-          <div class="muted small">{{ d.category }}</div></td>
-        <td class="r plus">+{{ d.delta|int }}</td>
-        <td class="r">{{ d.prev_stock|int }} → {{ d.stock|int }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% if a.deliveries|length > 300 %}<p class="muted small">Pokazano 300 z {{ a.deliveries|length }}.</p>{% endif %}
-  {% endif %}
-</section>
 {% endif %}
 {% endblock %}

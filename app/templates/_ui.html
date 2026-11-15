@@ -1,0 +1,90 @@
+{% macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+{%- if name == 'home' %}<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>
+{%- elif name == 'chart' %}<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-6"/><path d="M15 8h5v5"/>
+{%- elif name == 'truck' %}<path d="M2 6h12v10H2z"/><path d="M14 9h4l4 4v3h-8z"/><circle cx="6.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/>
+{%- elif name == 'box' %}<path d="m3 7.5 9-4.5 9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/>
+{%- elif name == 'tag' %}<path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1.5"/>
+{%- elif name == 'star' %}<path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/>
+{%- elif name == 'list' %}<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>
+{%- elif name == 'clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{%- elif name == 'sliders' %}<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>
+{%- elif name == 'settings' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+{%- elif name == 'refresh' %}<path d="M20 11a8 8 0 0 0-14.6-4.5L3 9"/><path d="M3 4v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L21 15"/><path d="M21 20v-5h-5"/>
+{%- elif name == 'download' %}<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
+{%- elif name == 'alert' %}<path d="M12 3 2 20h20z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/>
+{%- elif name == 'check' %}<path d="m4 12.5 5 5L20 6.5"/>
+{%- elif name == 'x' %}<path d="M6 6l12 12M18 6 6 18"/>
+{%- elif name == 'plus' %}<path d="M12 5v14M5 12h14"/>
+{%- elif name == 'search' %}<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>
+{%- elif name == 'menu' %}<path d="M4 6h16M4 12h16M4 18h16"/>
+{%- elif name == 'up' %}<path d="M12 19V5M6 11l6-6 6 6"/>
+{%- elif name == 'down' %}<path d="M12 5v14M6 13l6 6 6-6"/>
+{%- elif name == 'store' %}<path d="M4 9.5 5.5 4h13L20 9.5"/><path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M5 11v9h14v-9"/><path d="M10 20v-5h4v5"/>
+{%- elif name == 'flask' %}<path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7.5 15h9"/>
+{%- elif name == 'external' %}<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v6H4V5h6"/>
+{%- elif name == 'lock' %}<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+{%- elif name == 'bell' %}<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>
+{%- elif name == 'database' %}<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>
+{%- elif name == 'cloud' %}<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z"/><path d="m12 12v6M9.5 14.5 12 12l2.5 2.5"/>
+{%- elif name == 'play' %}<path d="M7 4v16l13-8z"/>
+{%- elif name == 'logout' %}<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>
+{%- elif name == 'zap' %}<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
+{%- elif name == 'calendar' %}<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
+{%- elif name == 'trend' %}<path d="m3 17 6-6 4 4 8-8"/><path d="M17 7h4v4"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro delta(v, invert=false) -%}
+{%- if v is not none -%}
+{%- set good = (v > 0) != invert -%}
+<span class="delta {{ 'flat' if v|abs < 0.5 else ('up' if good else 'down') }}" title="w porównaniu z poprzednim okresem">
+{%- if v|abs >= 0.5 %}{{ icon('up' if v > 0 else 'down') }}{% endif %}{{ v|pct if v|abs >= 0.5 else '0%' }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro kpi(label, value, d=none, foot='', dotvar='', invert=false) -%}
+<div class="kpi">
+  <div class="label">{% if dotvar %}<span class="dot" style="background:var({{ dotvar }})"></span>{% endif %}{{ label }}</div>
+  <div class="value" title="{{ value }}">{{ value }}</div>
+  <div class="foot">{{ delta(d, invert) }}{% if foot %}<span>{{ foot }}</span>{% endif %}</div>
+</div>
+{%- endmacro %}
+
+{% macro periods(period, base, keys=('1','7','30','90','all')) -%}
+<div class="seg">
+{% for k in keys %}<a href="{{ base }}?period={{ k }}" class="{{ 'on' if period==k }}">{{ PERIODS[k] }}</a>{% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro status(s) -%}
+{%- if s == 'ok' %}<span class="pill ok">{{ icon('check') }}ok</span>
+{%- elif s == 'częściowy' %}<span class="pill warn">{{ icon('alert') }}częściowy</span>
+{%- elif s == 'trwa' %}<span class="pill info">{{ icon('refresh') }}trwa</span>
+{%- else %}<span class="pill bad">{{ icon('x') }}{{ s }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro empty(title, text='', ic='box') -%}
+<div class="empty">{{ icon(ic) }}<p><b>{{ title }}</b></p>{% if text %}<p class="small muted">{{ text }}</p>{% endif %}</div>
+{%- endmacro %}
+
+{% macro watch_btn(shop, pid, on) -%}
+<form method="post" action="/shop/{{ shop.id }}/watch/{{ pid }}" data-watch class="inline">
+  <button class="star {{ 'on' if on }}" title="{{ 'Usuń z obserwowanych' if on else 'Obserwuj' }}">{{ icon('star') }}</button>
+</form>
+{%- endmacro %}
+
+{% macro csv(shop, kind, period='') -%}
+<a class="btn ghost small" href="/shop/{{ shop.id }}/export/{{ kind }}.csv{% if period %}?period={{ period }}{% endif %}"
+   title="Pobierz jako plik CSV (Excel)">{{ icon('download') }}CSV</a>
+{%- endmacro %}
+
+{% macro product_cell(shop, p, id=none) -%}
+<a class="name" href="/shop/{{ shop.id }}/product/{{ id or p.id }}">{{ p.name }}</a>
+<div class="meta">{{ p.category }}{% if p.code %} · {{ p.code }}{% endif %}</div>
+{%- endmacro %}
+
+{% macro not_enough(rg) -%}
+<div class="card">{{ empty('Za mało danych', 'Statystyki pojawią się po drugim dniu pobierania – aplikacja porównuje kolejne dni.' , 'clock') }}</div>
+{%- endmacro %}

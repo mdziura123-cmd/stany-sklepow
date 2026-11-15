@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, periods, empty, product_cell, not_enough, csv, delta %}
+{% block title %}{{ shop.name }} · Ceny i oferta{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+<div class="toolbar">
+  {{ periods(period, '/shop/' ~ shop.id ~ '/offer') }}
+  {% if o.enough %}<span class="range">{{ o.range.label }}</span>{% endif %}
+</div>
+{% if not o.enough %}{{ not_enough(o.range) }}{% else %}
+<div class="kpis">
+  {{ kpi('Zmiany cen', o.prices|length|string, foot=(o.prices|selectattr('pct')|selectattr('pct', 'gt', 0)|list|length) ~ ' w górę · ' ~ (o.prices|selectattr('pct')|selectattr('pct', 'lt', 0)|list|length) ~ ' w dół') }}
+  {{ kpi('Nowe produkty', o.new|length|string) }}
+  {{ kpi('Zniknęły z oferty', o.gone|length|string) }}
+  {{ kpi('Wyprzedane / wróciły', (o.sold_out|length) ~ ' / ' ~ (o.back|length)) }}
+</div>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('tag') }} Zmiany cen</h2>{{ csv(shop, 'prices', period) }}</div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not o.prices %}{{ empty('Bez zmian cen w tym okresie', '', 'tag') }}{% else %}
+      <table>
+        <thead><tr><th>Produkt</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead>
+        <tbody>
+        {% for r in o.prices[:300] %}
+          <tr><td>{{ product_cell(shop, r, r.product_id) }}<div class="meta">{{ r.day|short }}</div></td>
+            <td class="r muted">{{ r.prev_price|money }}</td><td class="r"><b>{{ r.price|money }}</b></td>
+            <td class="r">{{ delta(r.pct, true) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Ceny wg kategorii</h2></div>
+    <div class="card-body flush tbl-wrap">
+      {% if not o.price_cats %}{{ empty('Bez zmian cen', '', 'tag') }}{% else %}
+      <table>
+        <thead><tr><th>Kategoria</th><th class="r">Zmian</th><th class="r">↑ / ↓</th><th class="r">Średnio</th></tr></thead>
+        <tbody>
+        {% for c in o.price_cats %}
+          <tr><td>{{ c.name }}</td><td class="r">{{ c.count }}</td><td class="r">{{ c.up }} / {{ c.down }}</td><td class="r">{{ delta(c.avg, true) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="grid g2 mt">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('plus') }} Nowe w ofercie</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not o.new %}{{ empty('Brak nowych produktów', '', 'box') }}{% else %}
+      <table><tbody>
+      {% for p in o.new %}<tr><td>{{ product_cell(shop, p) }}</td><td class="r">{{ p.cur_stock|num }}<div class="meta">od {{ p.first_seen|short }}</div></td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('x') }} Zniknęły z oferty</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not o.gone_reliable and o.gone %}<div class="alert warn" style="margin:8px 14px">{{ icon('alert') }}Ostatnie pobranie było niepełne – część produktów może tylko chwilowo nie być widoczna.</div>{% endif %}
+      {% if not o.gone %}{{ empty('Nic nie zniknęło', '', 'check') }}{% else %}
+      <table><tbody>
+      {% for p in o.gone %}<tr><td>{{ product_cell(shop, p) }}</td><td class="r muted">ostatnio {{ p.last_seen|short }}<div class="meta">stan {{ p.cur_stock|num }}</div></td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="grid g2 mt">
+  <section class="card">
+    <div class="card-head"><h2>Wyprzedane do zera</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not o.sold_out %}{{ empty('Brak', '', 'check') }}{% else %}
+      <table><tbody>
+      {% for r in o.sold_out %}<tr><td>{{ product_cell(shop, r, r.product_id) }}</td><td class="r"><span class="pill bad">{{ r.prev_stock|num }} → 0</span><div class="meta">{{ r.day|short }}</div></td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Wróciły na stan</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not o.back %}{{ empty('Brak', '', 'box') }}{% else %}
+      <table><tbody>
+      {% for r in o.back %}<tr><td>{{ product_cell(shop, r, r.product_id) }}</td><td class="r"><span class="pill ok">0 → {{ r.stock|num }}</span><div class="meta">{{ r.day|short }}</div></td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

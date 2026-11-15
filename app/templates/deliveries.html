@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, periods, empty, product_cell, not_enough, csv %}
+{% block title %}{{ shop.name }} · Dostawy{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+<div class="toolbar">
+  {{ periods(period, '/shop/' ~ shop.id ~ '/deliveries') }}
+  {% if d.enough %}<span class="range">{{ d.range.label }}</span>{% endif %}
+</div>
+{% if not d.enough %}{{ not_enough(d.range) }}{% else %}
+{% set cal = d.calendar %}
+<div class="kpis">
+  {{ kpi('Przybyło sztuk', d.t.delivered|num, dotvar='--series-2') }}
+  {{ kpi('Produktów w dostawach', d.t.deliv_products|num) }}
+  {{ kpi('Wartość dostaw (netto)', d.t.deliv_value|money(0)) }}
+  {{ kpi('Ostatnia dostawa', cal.last|day if cal and cal.last else '–', foot=('co ok. ' ~ ('%.1f'|format(cal.avg_gap)|replace('.', ',')) ~ ' dni') if cal and cal.avg_gap else '') }}
+</div>
+
+{% if cal and cal.next %}
+<div class="alert info">{{ icon('calendar') }}<div>Następnej większej dostawy można się spodziewać ok. <b>{{ cal.next|day }}</b>
+  (średni odstęp między dostawami: {{ '%.1f'|format(cal.avg_gap)|replace('.', ',') }} dni, na podstawie {{ cal.count }} dostaw).</div></div>
+{% endif %}
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>Kalendarz dostaw – 10 tygodni</h2></div>
+    <div class="card-body">
+      {% if cal %}
+      <div class="cal">
+        {% for i in range(7) %}
+          <div class="wd">{{ ['Pon','Wt','Śr','Czw','Pt','Sob','Nd'][i] }}</div>
+          {% for w in cal.grid %}{% set c = w[i] %}
+            <div class="c {{ 'f' if c.future }} {{ ('l' ~ c.level) if c.level }}" {% if c.products %}data-tip="{{ c.date|day }}|{{ c.products }} produktów|{{ c.value|money(0) }}"{% else %}data-tip="{{ c.date|day }}|brak dostaw"{% endif %}></div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+      <p class="hint">Kolor = liczba produktów, których stan wzrósł. Dzień dostawy liczony jako dzień przed odczytem.
+        Dzień dostawy to dzień, w którym przybyły co najmniej {{ cal.min_products }} produkty.</p>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Dostawy wg dnia tygodnia</h2></div>
+    <div class="card-body">
+      {% if cal and cal.count %}{{ charts.bar_chart(cal.weekday_items, '--series-2', width=480, height=240) }}
+      {% else %}{{ empty('Za mało dostaw', 'Statystyka pojawi się po kilku dostawach.', 'truck') }}{% endif %}
+    </div>
+  </section>
+</div>
+
+{% if cal and cal.days %}
+<section class="card mt">
+  <div class="card-head"><h2>Dni dostaw</h2></div>
+  <div class="card-body flush tbl-wrap">
+    <table>
+      <thead><tr><th>Odczyt</th><th class="r">Produktów</th><th class="r">Sztuk</th><th class="r">Wartość</th></tr></thead>
+      <tbody>
+      {% for x in cal.days[:20] %}
+        <tr><td>{{ x.day|day }}</td><td class="r">{{ x.products }}</td><td class="r">{{ x.units|num }}</td><td class="r"><b>{{ x.value|money(0) }}</b></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card mt">
+  <div class="card-head">
+    <h2>Co przyszło</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-del" style="width:180px;margin:0">{{ csv(shop, 'deliveries', period) }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not d.rows %}{{ empty('Brak dostaw w tym okresie', '', 'truck') }}{% else %}
+    <table id="t-del">
+      <thead><tr><th>Odczyt</th><th>Produkt</th><th class="r">Przybyło</th><th class="r hide-m">Stan</th><th class="r hide-m">Wartość</th></tr></thead>
+      <tbody>
+      {% for r in d.rows[:500] %}
+        <tr><td class="nowrap">{{ r.day|short }}</td><td>{{ product_cell(shop, r, r.product_id) }}</td>
+          <td class="r plus">+{{ r.delta|num }}</td><td class="r hide-m">{{ r.prev_stock|num }} → {{ r.stock|num }}</td>
+          <td class="r hide-m">{{ (r.delta * (r.price or 0))|money }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if d.rows|length > 500 %}<p class="hint" style="padding:0 18px 12px">Pokazano 500 z {{ d.rows|length }} – pełna lista w pliku CSV.</p>{% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

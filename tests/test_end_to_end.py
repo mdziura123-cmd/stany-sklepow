@@ -11,7 +11,7 @@ os.environ["NO_PROXY"] = "127.0.0.1,localhost"
 os.environ["no_proxy"] = "127.0.0.1,localhost"
 os.environ["DATA_DIR"] = tempfile.mkdtemp()
 
-from app import analysis, db, presets  # noqa: E402
+from app import db, presets, stats  # noqa: E402
 from app.scraper import Crawler  # noqa: E402
 from tests.fake_shop import Shop  # noqa: E402
 
@@ -56,12 +56,26 @@ def simulate(paginate):
     print("dzień 2:", len(items2), "zapytań", c2.fetcher.requests, "tryb", c2.report.mode_used)
     db.save_snapshot(sid, "2026-11-11", items2.values())
 
-    a = analysis.analyse(sid, "7")
-    print("sprzedane:", a["sold_units"], "dostawy:", a["delivered_units"])
-    print("top:", [(p["name"], p["sold"], p["category"]) for p in a["top"]])
-    print("kategorie:", [(c["name"], c["sold"]) for c in a["categories"]])
-    assert a["sold_units"] == 9, a["sold_units"]
-    assert a["delivered_units"] == 500
+    shop_row = db.get_shop(sid)
+    ov = stats.overview(shop_row, "7")
+    t = ov["t"]
+    print("sprzedane:", t["sold"], "dostawy:", t["delivered"])
+    print("top:", [(p["name"], p["sold"], p["category"]) for p in ov["top"]])
+    assert t["sold"] == 9, t["sold"]
+    assert t["delivered"] == 500
+
+    # ponowne pobranie tego samego dnia nie może podwoić zmian
+    db.save_snapshot(sid, "2026-11-11", items2.values())
+    t2 = stats.overview(shop_row, "7")["t"]
+    assert (t2["sold"], t2["delivered"]) == (9, 500), t2
+
+    # dzień 3: dostawa wycofana (stan wraca) = korekta, nie sprzedaż
+    shop.products[slugs[10]]["stock"] -= 500
+    items3, _ = crawl(cfg)
+    db.save_snapshot(sid, "2026-11-12", items3.values())
+    t3 = stats.overview(shop_row, "7")["t"]
+    assert (t3["sold"], t3["delivered"]) == (9, 0), t3
+    a = {"top": stats.overview(shop_row, "7")["top"]}
     cats = {p["category"] for p in a["top"]}
     assert "Pierścienie osadcze" in cats or "O-ringi" in cats
     # produkty z podkategorii mają kategorię dokładniejszą, nie nadrzędną

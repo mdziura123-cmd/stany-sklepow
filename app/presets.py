@@ -19,13 +19,13 @@ DEFAULT = {
     "product_link_pattern": r"/(?:products?|produkty?|p)/[^/?#]+/?$",
     "category_link_pattern": r"/(?:categories|category|kategorie|kategoria|kategorii|c)/[^/?#]+/?$",
     # stan magazynowy w tekście karty produktu – pierwsza grupa to liczba
-    "stock_regex": r"(?:Na stanie|Stan magazynowy|Stan|Dostępn\w*|Ilość w magazynie|W magazynie|In stock|Stock)\s*:?\s*(\d[\d  ]*?)\s*(?:szt|pcs|sztuk|op\b|x\b|mb\b|m\b|kg\b|kpl\b)",
+    "stock_regex": r"(?:Na stanie|Stan magazynowy|Stan|Dostępn\w*|Ilość w magazynie|W magazynie|In stock|Stock)\s*:?\s*(\d[\d \u00a0]*?(?:[.,]\d+)?)\s*(?:szt|pcs|sztuk|op\b|x\b|mb\b|m\b|kg\b|kpl\b)",
     # teksty oznaczające brak towaru – liczone jako stan 0
     "zero_regex": r"Na zapytanie|Na zamówienie|Brak w magazynie|Brak towaru|Niedostępn\w*|Wyprzedan\w*|Out of stock",
-    "price_regex": r"(\d[\d  ]*[.,]\d{1,2})\s*(?:zł|PLN)|(?:PLN|zł)\s*(\d[\d  ]*[.,]\d{1,2})",
+    "price_regex": r"(\d[\d \u00a0]*[.,]\d{1,2})\s*(?:zł|PLN)|(?:PLN|zł)\s*(\d[\d \u00a0]*[.,]\d{1,2})",
     "code_regex": r"(?:Kod|SKU|Indeks|Symbol)\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)",
     # liczba wszystkich produktów na liście, np. "Pozycje 1–20 z 4776"
-    "total_regex": r"(?:Pozycje|Produkty|Wyniki|Pokazano|Wyświetlono)\D{0,15}\d+\s*[–\-]\s*\d+\s*(?:z|of|spośród)\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\b",
+    "total_regex": r"(?:Pozycje|Produkty|Wyniki|Pokazano|Wyświetlono)\D{0,15}\d+\s*[–\-]\s*\d+\s*(?:z|of|spośród)\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
     "pagination": "auto",
     "delay_seconds": 1.5,
     "max_pages": 300,
@@ -34,16 +34,19 @@ DEFAULT = {
     "detected": {},
 }
 
+# Podnieś numer po zmianie presetu – zapisane sklepy dostaną nowe reguły same.
+PRESET_VERSION = {"ringsen.com": 2}
+
 PRESETS = {
     "ringsen.com": {
         "product_link_pattern": r"^/[a-z]{2}/products/[^/?#]+/?$",
         "category_link_pattern": r"^/[a-z]{2}/categories/[^/?#]+/?$",
-        # liczba bez jednostki: Ringsen podaje sztuki ("103szt.") albo metry ("76m")
-        "stock_regex": r"Na stanie\s*:?\s*(\d+(?:[  ]\d{3})*)",
+        # liczba bez jednostki: Ringsen podaje sztuki ("103szt.") albo metry ("76m", "12,5m")
+        "stock_regex": r"Na stanie\s*:?\s*(\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?)",
         "zero_regex": r"Na zapytanie",
-        "price_regex": r"PLN\s*(\d[\d  ]*[.,]\d+)",
+        "price_regex": r"PLN\s*(\d[\d \u00a0]*[.,]\d+)",
         "code_regex": r"Kod\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)",
-        "total_regex": r"Pozycje\D{0,5}\d+\s*[–\-]\s*\d+\s*z\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\b",
+        "total_regex": r"Pozycje\D{0,5}\d+\s*[–\-]\s*\d+\s*z\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
     },
 }
 
@@ -68,6 +71,7 @@ def config_for(url: str) -> dict:
         cfg.update(copy.deepcopy(PRESETS[name]))
     cfg["start_url"] = url.strip()
     cfg["preset"] = name or ""
+    cfg["preset_version"] = PRESET_VERSION.get(name, 0) if name else 0
     return cfg
 
 
@@ -75,4 +79,8 @@ def merged(cfg: dict) -> dict:
     """Uzupełnia brakujące klucze (np. po aktualizacji aplikacji)."""
     out = copy.deepcopy(DEFAULT)
     out.update(cfg or {})
+    name = out.get("preset")
+    if name in PRESETS and int(out.get("preset_version") or 0) < PRESET_VERSION.get(name, 0):
+        out.update(copy.deepcopy(PRESETS[name]))
+        out["preset_version"] = PRESET_VERSION[name]
     return out

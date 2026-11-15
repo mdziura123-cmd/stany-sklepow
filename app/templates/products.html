@@ -1,40 +1,48 @@
 {% extends "base.html" %}
-{% block title %}{{ shop.name }} – produkty{% endblock %}
+{% from "_ui.html" import icon, empty, product_cell, watch_btn, csv %}
+{% block title %}{{ shop.name }} · Produkty{% endblock %}
 {% block content %}
-{% set tab = 'products' %}{% include "_shopnav.html" %}
-<form class="filters" method="get">
-  <input name="q" placeholder="Szukaj nazwy lub kodu" value="{{ q }}">
-  <select name="cat">
+{% include "_shophead.html" %}
+<form class="filters toolbar" method="get">
+  <input type="search" name="q" placeholder="Szukaj nazwy lub kodu…" value="{{ q }}">
+  <select name="cat" onchange="this.form.submit()">
     <option value="">Wszystkie kategorie</option>
     {% for c in cats %}<option {{ 'selected' if c==cat }}>{{ c }}</option>{% endfor %}
   </select>
-  <button class="btn small">Filtruj</button>
+  <select name="sort" onchange="this.form.submit()">
+    {% for k, v in [('name','Nazwa A–Z'),('value','Największa wartość'),('stock','Największy stan'),('stock_asc','Najmniejszy stan'),('price','Najdroższe')] %}
+    <option value="{{ k }}" {{ 'selected' if sort==k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn">{{ icon('search') }}Szukaj</button>
+  {{ csv(shop, 'products') }}
 </form>
-<p class="muted small">Produktów: {{ count|int }}</p>
+<p class="muted small">Znaleziono {{ count|num }} produktów</p>
 <section class="card">
-<table>
-  <thead><tr><th>Produkt</th><th>Kategoria</th><th class="r">Stan</th><th class="r">Cena</th><th>Odczyt</th></tr></thead>
-  <tbody>
-  {% for r in rows %}
-    <tr>
-      <td><a href="/shop/{{ shop.id }}/product/{{ r.id }}">{{ r.name }}</a>
-        {% if r.code %}<div class="muted small">{{ r.code }}</div>{% endif %}</td>
-      <td class="small">{{ r.category }}</td>
-      <td class="r"><b>{{ r.stock|int }}</b></td>
-      <td class="r">{{ r.price|money if r.price is not none else '–' }}</td>
-      <td class="small muted nowrap">{{ r.day }}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="5" class="muted">Brak produktów.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+  <div class="card-body flush tbl-wrap">
+  {% if not rows %}{{ empty('Brak produktów', 'Zmień filtr albo uruchom pobieranie.') }}{% else %}
+  <table>
+    <thead><tr><th></th><th>Produkt</th><th class="r">Stan</th><th class="r hide-m">Cena netto</th><th class="r hide-m">Wartość</th><th class="r hide-m">Ostatnio</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td style="width:30px">{{ watch_btn(shop, r.id, r.watched) }}</td>
+        <td>{{ product_cell(shop, r) }}</td>
+        <td class="r"><b>{{ r.stock|num }}</b></td>
+        <td class="r hide-m">{{ r.price|money if r.price is not none else '–' }}</td>
+        <td class="r hide-m">{{ ((r.stock or 0) * (r.price or 0))|money }}</td>
+        <td class="r hide-m muted">{{ r.day|short }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  </div>
 </section>
 {% if pages > 1 %}
 <div class="pager">
-  {% if page > 1 %}<a href="?q={{ q|urlencode }}&cat={{ cat|urlencode }}&page={{ page-1 }}">← poprzednia</a>{% endif %}
-  <span>strona {{ page }} / {{ pages }}</span>
-  {% if page < pages %}<a href="?q={{ q|urlencode }}&cat={{ cat|urlencode }}&page={{ page+1 }}">następna →</a>{% endif %}
+  {% if page > 1 %}<a class="btn ghost small" href="?{{ qs }}&page={{ page-1 }}">← Poprzednia</a>{% endif %}
+  <span class="muted">strona {{ page }} z {{ pages }}</span>
+  {% if page < pages %}<a class="btn ghost small" href="?{{ qs }}&page={{ page+1 }}">Następna →</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

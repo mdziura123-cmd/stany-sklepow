@@ -1,19 +1,20 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon %}
+{% block title %}Dodaj sklep{% endblock %}
 {% block content %}
-<h1>Dodaj sklep</h1>
-<form method="post" class="card form">
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
-  <label>Link do sklepu
-    <input name="url" type="url" required placeholder="https://ringsen.com/pl" value="{{ url }}">
-  </label>
-  <p class="hint">
-    • <b>Strona główna</b> (np. https://ringsen.com/pl) – aplikacja sama znajdzie wszystkie kategorie.<br>
-    • <b>Link do kategorii</b> (np. https://ringsen.com/pl/categories/o-rings) – śledzona będzie tylko ta kategoria.
-    Kolejne kategorie dodasz później w ustawieniach.
-  </p>
-  <label>Nazwa (opcjonalnie)
-    <input name="name" placeholder="np. Ringsen" value="{{ name }}">
-  </label>
-  <button class="btn">Dodaj i przetestuj</button>
+<div class="page-head"><div><h1>Dodaj sklep</h1><div class="sub">Aplikacja sama znajdzie produkty i ich stany</div></div></div>
+<div class="grid g-2-1">
+<form method="post" class="card pad form">
+  {% if error %}<div class="alert bad">{{ icon('alert') }}{{ error }}</div>{% endif %}
+  <label>Link do sklepu<input name="url" type="url" required placeholder="https://ringsen.com/pl" value="{{ url }}" autofocus></label>
+  <label>Nazwa (opcjonalnie)<input name="name" placeholder="np. Ringsen" value="{{ name }}"></label>
+  <button class="btn">{{ icon('flask') }}Dodaj i przetestuj</button>
 </form>
+<section class="card pad">
+  <h2>Jaki link podać?</h2>
+  <p class="small"><b>Strona główna</b> (np. https://ringsen.com/pl) – aplikacja znajdzie wszystkie kategorie.</p>
+  <p class="small"><b>Link do kategorii</b> – śledzona będzie tylko ta kategoria. Kolejne dodasz w ustawieniach sklepu.</p>
+  <p class="small muted">Po dodaniu zobaczysz test: listę znalezionych produktów ze stanami. Jeśli coś się nie zgadza, reguły poprawisz w ustawieniach.</p>
+</section>
+</div>
 {% endblock %}

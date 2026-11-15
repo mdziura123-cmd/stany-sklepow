@@ -1,5 +1,5 @@
 # Plik do zaimportowania w CasaOS: App Store -> „+” -> Custom Install -> Import.
-# Zamień mdziura123-cmd na swój login z GitHuba (małymi literami).
+# Dwa kontenery: aplikacja oraz Watchtower, który codziennie o 2:00 instaluje nowe wersje z GitHuba.
 name: stany-sklepow
 services:
   stany-sklepow:
@@ -11,8 +11,12 @@ services:
     environment:
       TZ: Europe/Warsaw
       RUN_HOUR: "3"        # o której codziennie pobierać stany
+      UPDATE_HOUR: "2"     # tylko informacyjnie – godzina aktualizacji z Watchtowera
     volumes:
       - /DATA/AppData/stany-sklepow:/data
+      - /DATA/Backup/stany-sklepow:/backups
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     x-casaos:
       envs:
         - container: RUN_HOUR
@@ -29,6 +33,25 @@ services:
           description:
             en_us: Database
             pl_pl: Baza danych
+        - container: /backups
+          description:
+            en_us: Daily database backups
+            pl_pl: Codzienne kopie zapasowe bazy
+
+  watchtower:
+    # utrzymywana wersja Watchtowera (oryginał containrrr/watchtower jest porzucony)
+    image: nickfedor/watchtower:latest
+    container_name: stany-sklepow-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: Europe/Warsaw
+      WATCHTOWER_LABEL_ENABLE: "true"        # aktualizuje tylko kontenery z etykietą (czyli tę aplikację)
+      WATCHTOWER_SCHEDULE: "0 0 2 * * *"     # codziennie o 2:00 (przed pobieraniem o 3:00)
+      WATCHTOWER_CLEANUP: "true"             # usuwa stare obrazy
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+
 x-casaos:
   architectures: [amd64, arm64]
   main: stany-sklepow
@@ -40,8 +63,8 @@ x-casaos:
     en_us: Track shop stock levels, sales and deliveries
     pl_pl: Śledzenie stanów sklepów, sprzedaży i dostaw
   description:
-    en_us: Downloads stock levels from shop websites daily and shows best sellers, categories and deliveries.
-    pl_pl: Codziennie pobiera stany ze stron sklepów i pokazuje bestsellery, kategorie oraz dostawy.
+    en_us: Downloads stock levels from shop websites daily and shows best sellers, categories, deliveries and alerts.
+    pl_pl: Codziennie pobiera stany ze stron sklepów i pokazuje bestsellery, kategorie, dostawy i alerty.
   title:
     en_us: Stany sklepów
     pl_pl: Stany sklepów

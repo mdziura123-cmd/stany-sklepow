@@ -8,6 +8,38 @@ i porównuje je z dniem poprzednim:
 
 Dane są przybliżone (sprzedaż i dostawa z tego samego dnia się sumują), ale do kontroli sprzedaży wystarczą.
 
+## Co pokazuje panel
+
+- **Przegląd** – wartość sprzedaży, sprzedane sztuki, dostawy i wartość magazynu z porównaniem
+  do poprzedniego okresu, wykres dzień po dniu, produkty, które się kończą, duże zamówienia.
+- **Sprzedaż** – ranking produktów i kategorii, sprzedaż wg dni tygodnia, trendy (7 vs 7 i 30 vs 30 dni:
+  co rośnie, co słabnie), duże zamówienia (jednorazowe duże spadki stanu).
+- **Dostawy** – co przyszło, kalendarz dostaw z 10 tygodni, dni tygodnia dostaw, średni odstęp
+  i przewidywana kolejna dostawa.
+- **Magazyn** – na ile dni starczy towaru (ze średniej sprzedaży), martwy towar (bez ruchu 30/60/90 dni),
+  wartość magazynu w czasie i wg kategorii.
+- **Ceny i oferta** – zmiany cen (także wg kategorii), nowe produkty, produkty, które zniknęły,
+  wyprzedane do zera i te, które wróciły.
+- **Obserwowane** – własna lista produktów (gwiazdka) z progiem minimalnego stanu i alertami.
+- **Eksport CSV** (Excel) przy każdej tabeli.
+
+Korekty magazynowe (stan spada i następnego dnia wraca do tej samej wartości) nie są liczone
+ani jako sprzedaż, ani jako dostawa.
+
+## Ustawienia systemu
+
+- **Powiadomienia** – poranne podsumowanie i alerty do Home Assistant (usługa `notify.…`) lub e-mailem.
+- **Hasło do panelu** – opcjonalne; dla Home Assistant jest wtedy klucz API.
+- **Kopie zapasowe** – codziennie po pobraniu, w folderze `/DATA/Backup/stany-sklepow` (domyślnie 14 ostatnich).
+- **Aktualizacje** – panel pokazuje, czy na GitHubie jest nowsza wersja.
+
+## Automatyczne aktualizacje
+
+Plik `docker-compose.yml` zawiera drugi kontener – **Watchtower** (utrzymywana wersja `nickfedor/watchtower`).
+Codziennie o 2:00 sprawdza, czy GitHub zbudował nowy obraz aplikacji; jeśli tak, pobiera go
+i uruchamia aplikację od nowa. Baza danych i kopie zostają bez zmian. Watchtower aktualizuje tylko
+kontenery z etykietą `com.centurylinklabs.watchtower.enable=true`, więc inne aplikacje w CasaOS są bezpieczne.
+
 ## Jak to działa
 
 Sklep dodajesz w panelu, podając link:
@@ -45,14 +77,17 @@ Baza danych leży w `/DATA/AppData/stany-sklepow/stany.db`, więc reinstalacja a
 
 ### Aktualizacja
 
-Po zmianach w kodzie GitHub zbuduje nowy obraz. W CasaOS: ustawienia aplikacji → **Update**
-(albo `docker compose pull && docker compose up -d`).
+Z Watchtowerem (patrz wyżej) nic nie trzeba robić – nowa wersja instaluje się sama o 2:00.
+Ręcznie: w CasaOS ustawienia aplikacji → **Update** albo w terminalu
+`docker pull ghcr.io/mdziura123-cmd/stany-sklepow:latest` i ponowne uruchomienie aplikacji.
 
 ## Ustawienia (zmienne środowiskowe)
 
 | Zmienna    | Domyślnie       | Opis                                  |
 |------------|-----------------|---------------------------------------|
 | `RUN_HOUR` | `3`             | od której godziny codziennie pobierać |
+| `UPDATE_HOUR` | `2`          | godzina aktualizacji (tylko do wyświetlania; harmonogram ustawia `WATCHTOWER_SCHEDULE`) |
+| `BACKUP_DIR` | `/backups`    | folder kopii zapasowych |
 | `TZ`       | `Europe/Warsaw` | strefa czasowa                        |
 | `PORT`     | `8090`          | port panelu                           |
 | `DATA_DIR` | `/data`         | folder bazy danych                    |
@@ -62,7 +97,9 @@ Gdy strona nie działa, aplikacja próbuje maksymalnie 3 razy dziennie, co godzi
 
 ## Home Assistant
 
-`GET /api/shop/<id>/summary?period=1` zwraca JSON (sprzedane sztuki, wartość, dostawy, top 5).
+`GET /api/shop/<id>/summary?period=1` zwraca JSON (sprzedane sztuki, wartość, dostawy, top 5,
+wartość magazynu, liczba kończących się produktów, alerty). Gdy ustawisz hasło do panelu, dodaj
+do adresu `&key=…` (klucz jest w Ustawieniach).
 Przykład czujnika:
 
 ```yaml

@@ -1,42 +1,43 @@
 {% extends "base.html" %}
-{% block title %}{{ shop.name }} – test{% endblock %}
+{% from "_ui.html" import icon, empty %}
+{% block title %}{{ shop.name }} · Test{% endblock %}
 {% block content %}
-{% set tab = 'test' %}{% include "_shopnav.html" %}
-<section class="card">
-  <h2>Test odczytu</h2>
-  <p class="muted small">Test pobiera stronę startową i pierwszą listę produktów. Nic nie jest zapisywane.
-    Zapytań: {{ res.requests }}. {% if cfg.preset %}Użyto gotowych ustawień dla <b>{{ cfg.preset }}</b>.{% else %}Użyto reguł uniwersalnych.{% endif %}</p>
-  {% if res.ok %}
-    <div class="ok">✅ Odczyt działa: na pierwszej liście znaleziono {{ res.found }} produktów ze stanem
-      {% if res.total %}(lista podaje łącznie {{ res.total|int }}){% endif %}.</div>
-  {% else %}
-    <div class="error">❌ {{ res.error }}</div>
-    <p class="small">Co możesz zrobić: w <a href="/shop/{{ shop.id }}/edit">ustawieniach</a> popraw
-      „wzorzec linku produktu” (fragment adresu, po którym poznać produkt, np. <code>/produkt/</code>)
-      i „wyrażenie stanu” (tekst przed liczbą sztuk, np. <code>Dostępność: 12 szt.</code>).</p>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Listy do sprawdzania ({{ res.sources|length }})</h2>
-  <ul class="sources">
-  {% for u, label in res.sources %}<li><b>{{ label }}</b> <a class="muted small" href="{{ u }}" target="_blank" rel="noopener">{{ u }}</a></li>{% endfor %}
-  </ul>
-</section>
-
-{% if res.products %}
-<section class="card">
-  <h2>Pierwsze produkty z: {{ res.first_url }}</h2>
-  <table>
-    <thead><tr><th>Produkt</th><th>Kod</th><th class="r">Stan</th><th class="r">Cena</th></tr></thead>
-    <tbody>
-    {% for it in res.products %}
-      <tr><td><a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.name }}</a></td><td class="small">{{ it.code }}</td>
-        <td class="r"><b>{{ it.stock|int }}</b></td><td class="r">{{ it.price|money if it.price is not none else '–' }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
+{% include "_shophead.html" %}
+{% if res.ok %}
+<div class="alert ok">{{ icon('check') }}<div><b>Odczyt działa.</b> Na pierwszej liście znaleziono {{ res.found }} produktów ze stanem
+  {% if res.total %}(lista podaje łącznie {{ res.total|num }}){% endif %}. Zapytań: {{ res.requests }}.
+  {% if cfg.preset %}Użyto gotowych ustawień dla <b>{{ cfg.preset }}</b>.{% else %}Użyto reguł uniwersalnych.{% endif %}</div></div>
+{% else %}
+<div class="alert bad">{{ icon('alert') }}<div><b>{{ res.error }}</b><br>
+  W <a href="/shop/{{ shop.id }}/edit">ustawieniach</a> popraw „wzorzec linku produktu” (fragment adresu produktu, np. <code>/produkt/</code>)
+  i „stan” (tekst przed liczbą sztuk, np. <code>Dostępność: 12 szt.</code>).</div></div>
 {% endif %}
-<form method="post" action="/shop/{{ shop.id }}/run"><button class="btn">Wygląda dobrze – pobierz teraz pełne stany</button></form>
+
+<div class="grid g-2-1">
+  <section class="card">
+    <div class="card-head"><h2>Pierwsze produkty{% if res.first_url %} z listy{% endif %}</h2></div>
+    <div class="card-body flush tbl-wrap">
+      {% if not res.products %}{{ empty('Nie znaleziono produktów') }}{% else %}
+      <table>
+        <thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Stan</th><th class="r">Cena</th></tr></thead>
+        <tbody>
+        {% for it in res.products %}
+          <tr><td><a class="name" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.name }}</a></td><td class="small hide-m">{{ it.code }}</td>
+            <td class="r"><b>{{ it.stock|num }}</b></td><td class="r">{{ it.price|money if it.price is not none else '–' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Listy do sprawdzania ({{ res.sources|length }})</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      <table><tbody>
+      {% for u, label in res.sources %}<tr><td><b>{{ label }}</b><div class="meta"><a href="{{ u }}" target="_blank" rel="noopener">{{ u }}</a></div></td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+</div>
+<form method="post" action="/shop/{{ shop.id }}/run" class="mt"><button class="btn">{{ icon('play') }}Wygląda dobrze – pobierz pełne stany</button></form>
 {% endblock %}

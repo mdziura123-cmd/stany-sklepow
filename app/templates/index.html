@@ -1,30 +1,49 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, status, empty, delta %}
+{% block title %}Pulpit · Stany sklepów{% endblock %}
 {% block content %}
-<h1>Sklepy</h1>
+<div class="page-head">
+  <div>
+    <h1>Pulpit</h1>
+    <div class="sub">Podsumowanie ostatniego dnia we wszystkich sklepach</div>
+  </div>
+  <div class="actions"><a class="btn" href="/shop/new">{{ icon('plus') }}Dodaj sklep</a></div>
+</div>
+
 {% if not shops %}
-<div class="card empty">
-  <p>Nie masz jeszcze żadnego sklepu.</p>
-  <p>Dodaj sklep, podając link do jego strony głównej albo do kategorii.</p>
-  <a class="btn" href="/shop/new">+ Dodaj sklep</a>
+<div class="card">{{ empty('Nie masz jeszcze żadnego sklepu', 'Dodaj sklep, podając link do jego strony głównej albo do kategorii.', 'store') }}
+  <div style="text-align:center;padding-bottom:30px"><a class="btn" href="/shop/new">{{ icon('plus') }}Dodaj pierwszy sklep</a></div>
 </div>
 {% endif %}
-<div class="grid">
+
+<div class="grid g2">
 {% for s in shops %}
-  <a class="card shop" href="/shop/{{ s.shop.id }}">
-    <h2>{{ s.shop.name }} {% if not s.shop.enabled %}<span class="tag">wyłączony</span>{% endif %}</h2>
-    <div class="muted small">{{ s.shop.config.start_url }}</div>
-    <div class="stats">
-      <div><b>{{ s.counts.products|int }}</b><span>produktów</span></div>
-      {% if s.a.enough %}
-      <div><b>{{ s.a.sold_units|int }}</b><span>sprzedane ({{ s.a.to }})</span></div>
-      <div><b>{{ s.a.delivered_units|int }}</b><span>w dostawach</span></div>
-      {% endif %}
+  {% set ov = s.ov %}
+  <a class="card shop-card" href="/shop/{{ s.shop.id }}">
+    <div class="top">
+      <div>
+        <h2>{{ s.shop.name }}</h2>
+        <div class="host">{{ s.shop.config.start_url }}</div>
+      </div>
+      {% if s.last %}{{ status(s.last.status) }}{% endif %}
     </div>
-    {% if s.last %}
-    <div class="small">Ostatnie pobranie: {{ s.last.started[:16]|replace("T"," ") }} –
-      <span class="st st-{{ s.last.status }}">{{ s.last.status }}</span></div>
-    {% else %}<div class="small muted">Jeszcze nie pobierano.</div>{% endif %}
-    {% if not s.a.enough %}<div class="small muted">Analiza pojawi się po drugim dniu pobierania.</div>{% endif %}
+    {% if ov.enough %}
+    <div class="mini">
+      <div><span>Sprzedaż {{ ov.range.end|short }}</span><b>{{ ov.t.value|money(0) }}</b></div>
+      <div><span>Sprzedane szt.</span><b>{{ ov.t.sold|num }}</b></div>
+      <div><span>Dostawy szt.</span><b>{{ ov.t.delivered|num }}</b></div>
+    </div>
+    {{ charts.sparkline(s.spark_sold, '--series-1', 520, 46, fluid=true) }}
+    <div class="small muted" style="margin-top:8px">Wartość sprzedaży z 30 dni · {{ s.counts.products|num }} produktów · magazyn {{ ov.stock_value|money(0) }}</div>
+    {% else %}
+    <div class="mini">
+      <div><span>Produktów</span><b>{{ s.counts.products|num }}</b></div>
+      <div><span>Magazyn</span><b>{{ ov.stock_value|money(0) }}</b></div>
+      <div><span>Odczytów</span><b>{{ ov.range.days|length }}</b></div>
+    </div>
+    <div class="small muted">Analiza pojawi się po drugim dniu pobierania.</div>
+    {% endif %}
+    {% if s.last %}<div class="small muted" style="margin-top:6px">Ostatnie pobranie: {{ s.last.started[:16]|replace("T"," ") }}</div>{% endif %}
   </a>
 {% endfor %}
 </div>

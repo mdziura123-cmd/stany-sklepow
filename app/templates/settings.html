@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, empty %}
+{% block title %}Ustawienia · Stany sklepów{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Ustawienia</h1><div class="sub">Powiadomienia, hasło, kopie zapasowe i aktualizacje</div></div></div>
+{% if msg %}<div class="alert ok">{{ icon('check') }}{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert bad">{{ icon('alert') }}{{ err }}</div>{% endif %}
+
+<div class="grid g2">
+<form method="post" action="/settings/notify" class="card pad form" id="powiadomienia">
+  <h2 style="margin-bottom:6px">{{ icon('bell') }} Powiadomienia</h2>
+  <p class="hint" style="margin-bottom:14px">Po każdym pobraniu (rano) aplikacja może wysłać podsumowanie dnia i alerty.
+    Aktywne kanały: <b>{{ channels|join(', ') if channels else 'brak' }}</b>.</p>
+  <label class="check"><input type="checkbox" name="daily" value="1" {{ 'checked' if n.daily }}> Poranne podsumowanie (sprzedaż, dostawy, top produkty, alerty)</label>
+  <label class="check"><input type="checkbox" name="alerts" value="1" {{ 'checked' if n.alerts }}> Tylko alerty, gdy podsumowanie jest wyłączone (obserwowane produkty, duże zamówienia)</label>
+
+  <h3 style="margin-top:18px">Home Assistant</h3>
+  <label>Adres Home Assistant<input name="ha_url" value="{{ n.ha_url }}" placeholder="http://192.168.1.10:8123"></label>
+  <label>Token dostępu długoterminowego
+    <input name="ha_token" type="password" placeholder="{{ '•••••••• (zapisany – zostaw puste, aby nie zmieniać)' if n.ha_token else 'Profil → Bezpieczeństwo → Tokeny' }}" autocomplete="off"></label>
+  {% if n.ha_token %}<label class="check"><input type="checkbox" name="clear_ha_token" value="1"> Usuń zapisany token</label>{% endif %}
+  <label>Usługa powiadomień<input name="ha_service" value="{{ n.ha_service }}" placeholder="notify.mobile_app_twoj_telefon">
+    <span class="hint">Nazwę znajdziesz w HA: Narzędzia deweloperskie → Akcje → wpisz „notify”.</span></label>
+
+  <h3 style="margin-top:18px">E-mail</h3>
+  <div class="row">
+    <label>Serwer SMTP<input name="smtp_host" value="{{ n.smtp_host }}" placeholder="smtp.gmail.com"></label>
+    <label>Port<input name="smtp_port" value="{{ n.smtp_port }}" inputmode="numeric"></label>
+  </div>
+  <label>Szyfrowanie
+    <select name="smtp_security">
+      {% for k, v in [('starttls','STARTTLS (port 587)'),('ssl','SSL (port 465)'),('none','brak')] %}<option value="{{ k }}" {{ 'selected' if n.smtp_security==k }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <div class="row">
+    <label>Login<input name="smtp_user" value="{{ n.smtp_user }}" autocomplete="off"></label>
+    <label>Hasło (dla Gmaila: hasło aplikacji)<input name="smtp_password" type="password" placeholder="{{ '•••••••• (zapisane)' if n.smtp_password else '' }}" autocomplete="new-password"></label>
+  </div>
+  {% if n.smtp_password %}<label class="check"><input type="checkbox" name="clear_smtp_password" value="1"> Usuń zapisane hasło</label>{% endif %}
+  <div class="row">
+    <label>Od<input name="smtp_from" value="{{ n.smtp_from }}" placeholder="domyślnie login"></label>
+    <label>Do<input name="smtp_to" value="{{ n.smtp_to }}" placeholder="twoj@adres.pl"></label>
+  </div>
+  <div class="actions">
+    <button class="btn">{{ icon('check') }}Zapisz</button>
+    <button class="btn ghost" name="test" value="1">{{ icon('bell') }}Zapisz i wyślij test</button>
+  </div>
+</form>
+
+<div class="stack">
+  <section class="card pad" id="aktualizacje">
+    <h2 style="margin-bottom:10px">{{ icon('cloud') }} Aktualizacje</h2>
+    <p class="small">Zainstalowana wersja: <b>{{ VERSION }}</b>{% if GIT_SHA %} (<code>{{ GIT_SHA }}</code>){% endif %}</p>
+    {% if upd.error %}
+      <div class="alert warn">{{ icon('alert') }}Nie udało się sprawdzić aktualizacji: {{ upd.error }}</div>
+    {% elif upd.behind %}
+      <div class="alert info">{{ icon('cloud') }}<div><b>Dostępna nowa wersja</b> ({{ upd.behind }} {{ 'zmiana' if upd.behind == 1 else 'zmian' }}).
+        Zainstaluje się sama o {{ UPDATE_HOUR }}:00, jeśli działa automatyczna aktualizacja.</div></div>
+      <table><tbody>{% for c in upd.commits %}<tr><td class="small">{{ c.message }}</td><td class="r small muted">{{ c.date|short }}</td></tr>{% endfor %}</tbody></table>
+    {% elif upd.behind == 0 %}
+      <div class="alert ok">{{ icon('check') }}Masz najnowszą wersję.</div>
+    {% elif upd.latest %}
+      <p class="small muted">Najnowsza wersja na GitHubie: <code>{{ upd.latest.sha }}</code> – {{ upd.latest.message }}</p>
+    {% endif %}
+    <p class="hint">Aktualizacje instaluje kontener <b>Watchtower</b> (z pliku docker-compose.yml): codziennie o {{ UPDATE_HOUR }}:00 sprawdza,
+      czy na GitHubie jest nowy obraz, pobiera go i uruchamia aplikację ponownie. Baza danych zostaje bez zmian.</p>
+    <form method="post" action="/settings/updates"><button class="btn ghost small">{{ icon('refresh') }}Sprawdź teraz</button></form>
+  </section>
+
+  <section class="card pad" id="bezpieczenstwo">
+    <h2 style="margin-bottom:10px">{{ icon('lock') }} Hasło do panelu</h2>
+    <form method="post" action="/settings/password" class="form">
+      {% if auth_on %}<label>Obecne hasło<input type="password" name="current" autocomplete="current-password"></label>{% endif %}
+      <div class="row">
+        <label>{{ 'Nowe hasło' if auth_on else 'Hasło' }}<input type="password" name="password" autocomplete="new-password"></label>
+        <label>Powtórz<input type="password" name="password2" autocomplete="new-password"></label>
+      </div>
+      <div class="actions">
+        <button class="btn">{{ icon('lock') }}{{ 'Zmień hasło' if auth_on else 'Ustaw hasło' }}</button>
+        {% if auth_on %}<button class="btn ghost" name="remove" value="1">Usuń hasło</button>{% endif %}
+      </div>
+      <p class="hint">{{ 'Panel jest chroniony hasłem.' if auth_on else 'Panel jest teraz dostępny bez hasła dla każdego w sieci domowej.' }}</p>
+    </form>
+    <h3 style="margin-top:18px">Klucz API (Home Assistant)</h3>
+    <p class="small">Gdy hasło jest ustawione, czujniki REST w Home Assistant muszą dodawać klucz do adresu:</p>
+    <code>/api/shop/1/summary?key={{ api_key }}</code>
+    <form method="post" action="/settings/apikey" style="margin-top:10px"><button class="btn ghost small">{{ icon('refresh') }}Wygeneruj nowy klucz</button></form>
+  </section>
+
+  <section class="card pad form" id="kopie">
+    <h2 style="margin-bottom:10px">{{ icon('database') }} Kopie zapasowe</h2>
+    <p class="small">Kopia bazy powstaje codziennie po pobraniu, w folderze <code>{{ backup_dir }}</code> na serwerze.</p>
+    <form method="post" action="/settings/backup" class="inline-input" style="margin:10px 0">
+      <span class="small">Trzymaj ostatnie</span><input name="keep" value="{{ keep }}" inputmode="numeric"><span class="small">kopii</span>
+      <button class="btn ghost small">Zapisz</button>
+      <button class="btn small" name="now" value="1">{{ icon('database') }}Utwórz teraz</button>
+    </form>
+    {% if backups %}
+    <table><tbody>
+      {% for b in backups[:10] %}<tr><td class="small">{{ b.name }}</td><td class="r small muted">{{ b.size|size }}</td>
+        <td class="r"><a class="btn ghost small" href="/backup/{{ b.name }}">{{ icon('download') }}</a></td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="small muted">Jeszcze nie ma kopii.</p>{% endif %}
+  </section>
+</div>
+</div>
+{% endblock %}

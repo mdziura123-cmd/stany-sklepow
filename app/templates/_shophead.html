@@ -1,0 +1,27 @@
+{% from "_ui.html" import icon, status %}
+<div class="page-head">
+  <div>
+    <h1>{{ shop.name }}</h1>
+    <div class="sub">
+      <a href="{{ shop.config.start_url }}" target="_blank" rel="noopener" class="muted">{{ shop.config.start_url }}</a>
+      {% if last %}<span>· pobrano {{ last.started[:16]|replace("T", " ") }}</span> {{ status(last.status) }}{% endif %}
+      {% if not shop.enabled %}<span class="pill">wstrzymany</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    <form method="post" action="/shop/{{ shop.id }}/run" class="inline">
+      <button class="btn" {{ 'disabled' if runner_status.running }}>{{ icon('refresh') }}Pobierz teraz</button>
+    </form>
+  </div>
+</div>
+<nav class="tabs">
+  <a href="/shop/{{ shop.id }}" class="{{ 'on' if tab=='dash' }}">{{ icon('home') }}Przegląd</a>
+  <a href="/shop/{{ shop.id }}/sales" class="{{ 'on' if tab=='sales' }}">{{ icon('chart') }}Sprzedaż</a>
+  <a href="/shop/{{ shop.id }}/deliveries" class="{{ 'on' if tab=='deliv' }}">{{ icon('truck') }}Dostawy</a>
+  <a href="/shop/{{ shop.id }}/stock" class="{{ 'on' if tab=='stock' }}">{{ icon('box') }}Magazyn</a>
+  <a href="/shop/{{ shop.id }}/offer" class="{{ 'on' if tab=='offer' }}">{{ icon('tag') }}Ceny i oferta</a>
+  <a href="/shop/{{ shop.id }}/watch" class="{{ 'on' if tab=='watch' }}">{{ icon('star') }}Obserwowane</a>
+  <a href="/shop/{{ shop.id }}/products" class="{{ 'on' if tab=='products' }}">{{ icon('list') }}Produkty</a>
+  <a href="/shop/{{ shop.id }}/runs" class="{{ 'on' if tab=='runs' }}">{{ icon('clock') }}Pobrania</a>
+  <a href="/shop/{{ shop.id }}/edit" class="{{ 'on' if tab in ('edit','test') }}">{{ icon('sliders') }}Ustawienia</a>
+</nav>

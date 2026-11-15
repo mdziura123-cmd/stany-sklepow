@@ -48,7 +48,7 @@ def to_int(s: str | None) -> int | None:
 def to_float(s: str | None) -> float | None:
     if not s:
         return None
-    s = re.sub(r"[\s ]", "", s).replace(",", ".")
+    s = re.sub(r"[\s\u00a0]", "", s).replace(",", ".")
     try:
         return float(s)
     except ValueError:
@@ -79,7 +79,7 @@ class Item:
     key: str            # stały identyfikator – ścieżka URL produktu
     name: str
     url: str
-    stock: int | None
+    stock: float | int | None  # sztuki, metry, kg…
     price: float | None = None
     code: str = ""
     category: str = ""
@@ -268,7 +268,10 @@ def parse_stock(text: str, rules: Rules) -> tuple[int | None, bool]:
     if z and (not m or z.start() < m.start()):
         return 0, True
     if m:
-        return to_int(first_group(m)), True
+        num = to_float(first_group(m))
+        if num is None:
+            return None, False
+        return (int(num) if num.is_integer() else num), True
     return None, False
 
 

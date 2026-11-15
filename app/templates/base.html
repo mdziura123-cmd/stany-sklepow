@@ -1,31 +1,64 @@
+{% from "_ui.html" import icon %}
 <!doctype html>
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2a78d6">
 <title>{% block title %}Stany sklepów{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M8 21l5-5 4 4 7-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css?v={{ VERSION }}{{ GIT_SHA }}">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/">📦 Stany sklepów</a>
-  <nav>
-    <a href="/">Sklepy</a>
-    <a href="/shop/new" class="btn small">+ Dodaj sklep</a>
-  </nav>
-</header>
-{% if runner_status.running %}
-<div class="running">
-  ⏳ Trwa pobieranie: <b>{{ runner_status.shop }}</b>
-  {% if runner_status.source %}· {{ runner_status.source }}{% endif %}
-  {% if runner_status.page %}· strona {{ runner_status.page }}{% endif %}
-  {% if runner_status.found %}· {{ runner_status.found|int }} produktów{% endif %}
-  <form method="post" action="/stop" class="inline"><button class="link">zatrzymaj</button></form>
+<div class="app">
+  <aside class="side">
+    <a class="brand" href="/"><span class="logo">{{ icon('trend') }}</span>Stany sklepów</a>
+    <nav class="nav">
+      <a href="/" class="{{ 'on' if section == 'home' }}">{{ icon('home') }}Pulpit</a>
+      <div class="side-label">Sklepy</div>
+      {% for s in shops_nav %}
+        <a href="/shop/{{ s.id }}" class="{{ 'on' if shop is defined and shop and shop.id == s.id and tab == 'dash' }}">{{ icon('store') }}{{ s.name }}</a>
+        {% if shop is defined and shop and shop.id == s.id %}
+        <div class="sub">
+          <a href="/shop/{{ s.id }}/sales" class="{{ 'on' if tab == 'sales' }}">Sprzedaż</a>
+          <a href="/shop/{{ s.id }}/deliveries" class="{{ 'on' if tab == 'deliv' }}">Dostawy</a>
+          <a href="/shop/{{ s.id }}/stock" class="{{ 'on' if tab == 'stock' }}">Magazyn</a>
+          <a href="/shop/{{ s.id }}/offer" class="{{ 'on' if tab == 'offer' }}">Ceny i oferta</a>
+          <a href="/shop/{{ s.id }}/watch" class="{{ 'on' if tab == 'watch' }}">Obserwowane</a>
+          <a href="/shop/{{ s.id }}/products" class="{{ 'on' if tab == 'products' }}">Produkty</a>
+        </div>
+        {% endif %}
+      {% endfor %}
+      <a href="/shop/new" class="{{ 'on' if section == 'new' }}">{{ icon('plus') }}Dodaj sklep</a>
+      <div class="side-label">System</div>
+      <a href="/settings" class="{{ 'on' if section == 'settings' }}">{{ icon('settings') }}Ustawienia</a>
+      {% if auth_on %}<form method="post" action="/logout"><a href="#" onclick="this.closest('form').submit();return false">{{ icon('logout') }}Wyloguj</a></form>{% endif %}
+    </nav>
+    <div class="side-foot">
+      Wersja {{ VERSION }}{% if GIT_SHA %} · {{ GIT_SHA }}{% endif %}<br>
+      Pobieranie codziennie o {{ RUN_HOUR }}:00
+      {% if upd.behind %}<a class="upd" href="/settings#aktualizacje">{{ icon('cloud') }} Nowa wersja – instalacja o {{ UPDATE_HOUR }}:00</a>{% endif %}
+    </div>
+  </aside>
+  <div class="scrim"></div>
+  <div class="main">
+    <div class="topbar">
+      <button class="btn ghost icon-only" data-menu aria-label="Menu">{{ icon('menu') }}</button>
+      <a class="brand" href="/"><span class="logo">{{ icon('trend') }}</span>Stany sklepów</a>
+    </div>
+    {% if runner_status.running %}
+    <div class="running" data-running>
+      {{ icon('refresh') }} Pobieranie: <b>{{ runner_status.shop }}</b>
+      <span data-run-text>{{ runner_status.source }}{% if runner_status.page %} · strona {{ runner_status.page }}{% endif %}</span>
+      <span class="bar"><i></i></span>
+      <form method="post" action="/stop" class="inline"><button class="link small">zatrzymaj</button></form>
+    </div>
+    {% endif %}
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
 </div>
-{% endif %}
-<main>
-{% block content %}{% endblock %}
-</main>
-<footer>stany-sklepow {{ VERSION }} · codzienne pobieranie od godz. {{ RUN_HOUR }}:00</footer>
+<script src="/static/app.js?v={{ VERSION }}{{ GIT_SHA }}"></script>
 </body>
 </html>

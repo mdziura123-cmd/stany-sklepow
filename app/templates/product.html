@@ -1,38 +1,60 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, empty, watch_btn %}
 {% block title %}{{ p.name }}{% endblock %}
 {% block content %}
-{% set tab = 'products' %}{% include "_shopnav.html" %}
+{% include "_shophead.html" %}
+<div class="page-head" style="margin-top:-4px">
+  <div>
+    <h1 style="font-size:1.3rem">{{ p.name }}</h1>
+    <div class="sub">{{ p.category }}{% if p.code %} · kod {{ p.code }}{% endif %} ·
+      <a href="{{ p.url }}" target="_blank" rel="noopener">otwórz w sklepie {{ icon('external') }}</a></div>
+  </div>
+  <div class="actions">{{ watch_btn(shop, p.id, watch is not none) }}<span class="small muted">{{ 'Obserwowany' if watch else 'Obserwuj' }}</span></div>
+</div>
+
+<div class="kpis">
+  {{ kpi('Stan', p.cur_stock|num, foot='cena ' ~ (p.cur_price|money if p.cur_price is not none else '–')) }}
+  {{ kpi('Sprzedane (cała historia)', sold|num, dotvar='--series-1') }}
+  {{ kpi('Przybyło w dostawach', deliv|num, dotvar='--series-2') }}
+  {{ kpi('Starczy na', supply.days_left|days if supply else '–', foot=('średnio ' ~ ('%.1f'|format(supply.avg)|replace('.', ',')) ~ ' / dzień') if supply else 'brak sprzedaży w 30 dni') }}
+</div>
+
 <section class="card">
-  <h2>{{ p.name }}</h2>
-  <p class="muted small">{{ p.category }}{% if p.code %} · kod {{ p.code }}{% endif %} ·
-    <a href="{{ p.url }}" target="_blank" rel="noopener">otwórz w sklepie ↗</a></p>
-  <div class="kpis">
-    <div class="kpi"><span>Sprzedane (cała historia)</span><b>{{ sold|int }}</b></div>
-    <div class="kpi"><span>Przybyło w dostawach</span><b>{{ deliv|int }}</b></div>
-    <div class="kpi"><span>Śledzony od</span><b class="smallb">{{ p.first_seen }}</b></div>
-  </div>
-  {% if spark %}
-  <div class="spark">
-    <svg viewBox="0 0 600 100" preserveAspectRatio="none"><polyline points="{{ spark }}" /></svg>
-    <div class="muted small">stan: min {{ mn|int }}, maks {{ mx|int }}</div>
-  </div>
-  {% endif %}
+  <div class="card-head"><h2>Stan w czasie</h2><span class="hint">śledzony od {{ p.first_seen|day }}</span></div>
+  <div class="card-body">{{ chart }}</div>
 </section>
+
+{% if watch %}
+<section class="card pad">
+  <form method="post" action="/shop/{{ shop.id }}/watch/{{ p.id }}" class="inline-input">
+    <input type="hidden" name="action" value="set">
+    <span class="small">Alert, gdy stan spadnie do</span>
+    <input name="min_stock" inputmode="decimal" value="{{ watch.min_stock|num if watch.min_stock is not none else '' }}" placeholder="brak">
+    <button class="btn ghost small">Zapisz próg</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="card">
-  <h2>Historia odczytów</h2>
-  <table>
-    <thead><tr><th>Dzień</th><th class="r">Stan</th><th class="r">Zmiana</th><th class="r">Cena</th></tr></thead>
-    <tbody>
-    {% for r in rows %}
-      <tr>
-        <td>{{ r.day }}</td>
-        <td class="r"><b>{{ r.stock|int }}</b></td>
-        <td class="r {{ 'plus' if r.delta and r.delta > 0 else ('minus' if r.delta and r.delta < 0) }}">
-          {% if r.delta %}{{ '+' if r.delta > 0 }}{{ r.delta|int }}{% else %}–{% endif %}</td>
-        <td class="r">{{ r.price|money if r.price is not none else '–' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="card-head"><h2>Historia zmian</h2></div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not changes %}{{ empty('Bez zmian od początku śledzenia', '', 'clock') }}{% else %}
+    <table>
+      <thead><tr><th>Odczyt</th><th>Rodzaj</th><th class="r">Zmiana</th><th class="r">Stan</th><th class="r hide-m">Cena</th></tr></thead>
+      <tbody>
+      {% for c in changes %}
+        <tr>
+          <td class="nowrap">{{ c.day|day }}</td>
+          <td>{% if c.kind == 'sale' %}<span class="pill info">sprzedaż</span>{% elif c.kind == 'delivery' %}<span class="pill warn">dostawa</span>
+              {% elif c.kind == 'price' %}<span class="pill">cena</span>{% else %}<span class="pill" title="Stan wrócił do poprzedniej wartości – nie liczone">korekta</span>{% endif %}</td>
+          <td class="r {{ 'plus' if c.delta > 0 else ('minus' if c.delta < 0) }}">{% if c.delta %}{{ '+' if c.delta > 0 }}{{ c.delta|num }}{% else %}–{% endif %}</td>
+          <td class="r">{{ c.prev_stock|num }} → <b>{{ c.stock|num }}</b></td>
+          <td class="r hide-m">{% if c.prev_price is not none and c.price is not none and (c.price - c.prev_price)|abs > 0.0001 %}{{ c.prev_price|money }} → {{ c.price|money }}{% else %}{{ c.price|money if c.price is not none else '–' }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
 </section>
 {% endblock %}

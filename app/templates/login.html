@@ -1,0 +1,20 @@
+{% from "_ui.html" import icon %}
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logowanie · Stany sklepów</title>
+<link rel="stylesheet" href="/static/style.css?v={{ VERSION }}{{ GIT_SHA }}">
+</head>
+<body>
+<div class="login">
+  <form method="post" action="/login" class="card form">
+    <div class="brand" style="padding:0 0 18px"><span class="logo">{{ icon('trend') }}</span>Stany sklepów</div>
+    {% if error %}<div class="alert bad">{{ icon('alert') }}{{ error }}</div>{% endif %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Hasło<input type="password" name="password" autofocus required autocomplete="current-password"></label>
+    <button class="btn" style="width:100%">{{ icon('lock') }}Zaloguj</button>
+  </form>
+</div>
+</body>
+</html>

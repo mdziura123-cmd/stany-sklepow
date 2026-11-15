@@ -1,7 +1,7 @@
-"""Start aplikacji: baza, harmonogram, panel WWW."""
+"""Start aplikacji: baza, harmonogram, sprawdzanie aktualizacji, panel WWW."""
 import logging
 
-from . import config, db, runner, web
+from . import config, db, runner, updates, web
 
 
 def main():
@@ -9,6 +9,7 @@ def main():
     db.init()
     db.mark_stale_runs()
     runner.start_scheduler()
+    updates.check_in_background()
     web.serve(config.PORT)
 
 
