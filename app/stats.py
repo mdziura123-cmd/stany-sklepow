@@ -527,6 +527,10 @@ def alerts(shop: dict, day: str):
             out.append(f"{w['name']}: {a}")
     for b in big_orders(shop, day, day, limit=5):
         out.append(f"Duże zamówienie: {b['name']} – {b['units']:g} ({b['value']:.0f} zł)")
+    try:
+        out += incoming_alerts(shop)
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 
@@ -645,4 +649,152 @@ def day_parts(shop: dict, period: str = "30") -> dict:
                bars=[{"label": r["label"], "value": r["value_per_hour"],
                       "tip": f"{r['name']} {r['label']}|{_money(r['value_per_hour'])} na godzinę|"
                              f"{r['tx_per_hour']:.1f} spadków stanu na godzinę".replace(".", ",")} for r in res])
+    return out
+
+
+# ---------------------------------------------------------------- zapowiedziane dostawy
+
+def _arrival_day(r) -> str:
+    """Dzień, w którym towar przyszedł: wzrost widoczny w odczycie o 5:00 to dostawa z poprzedniego wieczoru."""
+    return (r["prev_ts"] or "")[:10] or r["day"]
+
+
+def incoming_page(shop: dict) -> dict:
+    sid = shop["id"]
+    c = db.conn()
+    days = db.shop_days(sid)
+    last = days[-1] if days else None
+    today = config.today()
+    sold, span = _avg_daily_sales(sid, last) if len(days) >= 2 else ({}, 1)
+
+    # zapowiedzi widoczne teraz
+    upcoming = []
+    for r in c.execute(
+            """SELECT a.*, p.name, p.category, p.code, p.cur_stock, p.cur_price, p.inc_order_days
+               FROM announcements a JOIN products p ON p.id=a.product_id
+               WHERE a.shop_id=? AND a.status='open' ORDER BY a.date, p.name""", (sid,)):
+        avg = sold.get(r["product_id"], 0) / span
+        stock = r["cur_stock"] or 0
+        until = (_d(r["date"]) - _d(today)).days
+        left = stock / avg if avg > 0 else None
+        if stock <= 0:
+            cover = "empty"            # już brak towaru – czeka na dostawę
+        elif left is None:
+            cover = "unknown"
+        elif left >= until:
+            cover = "ok"
+        else:
+            cover = "short"            # zabraknie przed dostawą
+        upcoming.append(dict(r) | {"id": r["product_id"], "avg": avg, "until": until, "days_left": left,
+                                   "cover": cover, "gap": (until - left) if left is not None else None,
+                                   "value": (r["qty"] or 0) * (r["cur_price"] or 0)})
+
+    # kalendarz: suma sztuk i liczba produktów na dzień
+    cal = defaultdict(lambda: {"qty": 0.0, "products": 0, "value": 0.0})
+    for u in upcoming:
+        cal[u["date"]]["qty"] += u["qty"] or 0
+        cal[u["date"]]["products"] += 1
+        cal[u["date"]]["value"] += u["value"]
+    calendar = [{"date": k} | v for k, v in sorted(cal.items())]
+    cal_items = [{"label": f"{x['date'][8:10]}.{x['date'][5:7]}", "value": x["products"],
+                  "tip": f"{x['date'][8:10]}.{x['date'][5:7]}.{x['date'][:4]}|{x['products']} produktów|"
+                         f"{x['qty']:,.0f} szt.".replace(",", " ")} for x in calendar[:21]]
+
+    # rozliczone zapowiedzi: kiedy towar faktycznie przyszedł
+    since = _shift(today, -120)
+    history = []
+    for a in c.execute(
+            """SELECT a.*, p.name, p.category, p.code FROM announcements a JOIN products p ON p.id=a.product_id
+               WHERE a.shop_id=? AND a.status='gone' AND substr(a.gone_ts,1,10)>=?
+               ORDER BY a.gone_ts DESC""", (sid, since)):
+        lo, hi = a["first_ts"][:10], _shift(a["gone_ts"][:10], 2)
+        d = c.execute(
+            """SELECT * FROM changes WHERE product_id=? AND kind='delivery' AND day BETWEEN ? AND ?
+               ORDER BY ts, day LIMIT 1""", (a["product_id"], lo, hi)).fetchone()
+        row = dict(a) | {"id": a["product_id"], "arrived": None, "delay": None, "got": None}
+        if d:
+            row["arrived"] = _arrival_day(d)
+            row["delay"] = (_d(row["arrived"]) - _d(a["date"])).days
+            row["delay_first"] = (_d(row["arrived"]) - _d(a["first_date"])).days
+            row["got"] = d["delta"]
+        history.append(row)
+    settled = [h for h in history if h["delay"] is not None]
+    on_time = [h for h in settled if h["delay"] <= 1]
+    punct = 100 * len(on_time) / len(settled) if settled else None
+    delays = [h["delay"] for h in settled]
+
+    # dostępne na zamówienie (u dostawcy) – najpierw te, które się sprzedają, a nie ma ich na stanie
+    orderable = []
+    for r in c.execute(
+            """SELECT id, name, category, code, cur_stock, cur_price, inc_order_qty, inc_order_days, inc_next_date,
+                      inc_checked
+               FROM products WHERE shop_id=? AND last_seen=? AND inc_order_qty IS NOT NULL""", (sid, last)):
+        avg = sold.get(r["id"], 0) / span
+        lo = None
+        if r["inc_order_days"]:
+            try:
+                lo = int(str(r["inc_order_days"]).split("–")[0])
+            except ValueError:
+                lo = None
+        orderable.append(dict(r) | {"avg": avg, "earliest": _shift(today, lo) if lo is not None else None})
+    orderable.sort(key=lambda x: ((x["cur_stock"] or 0) > 0, -x["avg"], -(x["inc_order_qty"] or 0)))
+
+    shifted = [u for u in upcoming if u["shifts"] > 0]
+    in_offer = c.execute("SELECT COUNT(*) FROM products WHERE shop_id=? AND last_seen=?", (sid, last)).fetchone()[0] \
+        if last else 0
+    week = _shift(today, -6)
+    checked_week = c.execute(
+        "SELECT COUNT(*) FROM products WHERE shop_id=? AND last_seen=? AND substr(inc_checked,1,10)>=?",
+        (sid, last, week)).fetchone()[0] if last else 0
+    checked_ever = c.execute("SELECT COUNT(*) FROM products WHERE shop_id=? AND inc_checked IS NOT NULL",
+                             (sid,)).fetchone()[0]
+    next7 = [u for u in upcoming if u["until"] <= 7]
+    return {
+        "enabled": int(presets_pages(shop)) > 0,
+        "pages": presets_pages(shop),
+        "last": db.get_setting(f"incoming_last_{sid}"),
+        "upcoming": upcoming, "calendar": calendar, "cal_items": cal_items, "history": history[:200], "orderable": orderable[:500],
+        "orderable_count": len(orderable), "shifted": shifted,
+        "punct": punct, "settled": len(settled), "avg_delay": (sum(delays) / len(delays)) if delays else None,
+        "median_delay": median(delays) if delays else None,
+        "next7_qty": sum(u["qty"] or 0 for u in next7), "next7_products": len(next7),
+        "short": [u for u in upcoming if u["cover"] in ("short", "empty") and u["avg"] > 0],
+        "in_offer": in_offer, "checked_week": checked_week, "checked_ever": checked_ever,
+        "today": today,
+    }
+
+
+def presets_pages(shop: dict) -> int:
+    from . import presets
+    return int(presets.merged(shop["config"]).get("incoming_pages") or 0)
+
+
+def product_incoming(pid: int) -> dict:
+    c = db.conn()
+    p = c.execute("SELECT inc_checked, inc_json FROM products WHERE id=?", (pid,)).fetchone()
+    info = None
+    if p and p["inc_json"]:
+        try:
+            import json
+            info = json.loads(p["inc_json"])
+        except ValueError:
+            info = None
+    anns = c.execute("SELECT * FROM announcements WHERE product_id=? ORDER BY first_ts DESC LIMIT 20",
+                     (pid,)).fetchall()
+    return {"checked": p["inc_checked"] if p else None, "info": info, "announcements": anns}
+
+
+def incoming_alerts(shop: dict) -> list[str]:
+    """Do powiadomień: obserwowane produkty, którym zabraknie przed dostawą albo którym przesunięto termin."""
+    watched = db.watch_ids(shop["id"])
+    if not watched:
+        return []
+    out = []
+    for u in incoming_page(shop)["upcoming"]:
+        if u["id"] not in watched:
+            continue
+        if u["shifts"] and u["first_date"] != u["date"]:
+            out.append(f"{u['name']}: dostawa przesunięta {u['first_date']} → {u['date']}")
+        if u["cover"] == "short":
+            out.append(f"{u['name']}: zabraknie ok. {max(1, round(u['gap']))} dni przed dostawą ({u['date']})")
     return out

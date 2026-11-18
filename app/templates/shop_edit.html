@@ -23,6 +23,13 @@
     <label>Dzień dostawy: min. produktów<input name="delivery_min_products" inputmode="numeric" value="{{ stt.delivery_min_products if stt.delivery_min_products is not none else '' }}" placeholder="3"></label>
   </div>
 
+  <h2 style="margin:22px 0 14px">Zapowiedziane dostawy</h2>
+  <label>Ile stron produktów sprawdzać dziennie (0 = wyłączone)
+    <input name="incoming_pages" inputmode="numeric" value="{{ cfg.incoming_pages or 0 }}"></label>
+  <p class="hint">Daty „Najbliższe dostawy” i ilości „Dostępne na zamówienie” są tylko na stronach produktów.
+    Sprawdzane raz dziennie po pierwszym odczycie: najpierw obserwowane, z zapowiedzianą dostawą i kończące się,
+    potem reszta po kolei. Przy przerwie {{ cfg.delay_seconds }} s 600 stron to ok. {{ ((600 * cfg.delay_seconds|float) / 60)|round|int }} min.</p>
+
   <details {{ 'open' if error }}>
     <summary>Zaawansowane – reguły odczytu {% if cfg.preset %}(gotowe ustawienia: {{ cfg.preset }}){% endif %}</summary>
     <p class="hint">Zmieniaj tylko, gdy test pokazuje błędy (np. po zmianie wyglądu sklepu). Pola to wyrażenia regularne.</p>

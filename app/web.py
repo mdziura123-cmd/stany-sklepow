@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import re
+import threading
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlencode, urlparse
@@ -233,6 +234,21 @@ def shop_stock(req, q, sid):
                                                 watched=db.watch_ids(shop["id"])))
 
 
+@route("GET", r"/shop/(\d+)/incoming")
+def shop_incoming(req, q, sid):
+    shop = shop_or_404(sid)
+    return render("incoming.html", req, **shop_ctx(shop, "incoming", inc=stats.incoming_page(shop),
+                                                   watched=db.watch_ids(shop["id"])))
+
+
+@route("POST", r"/shop/(\d+)/incoming/run")
+def shop_incoming_run(req, q, sid):
+    shop = shop_or_404(sid)
+    if not runner.is_running():
+        threading.Thread(target=runner.run_incoming, args=(shop["id"],), daemon=True).start()
+    raise Redirect(f"/shop/{shop['id']}/incoming")
+
+
 @route("GET", r"/shop/(\d+)/offer")
 def shop_offer(req, q, sid):
     shop = shop_or_404(sid)
@@ -304,7 +320,8 @@ def product_view(req, q, sid, pid):
     return render("product.html", req, **shop_ctx(shop, "products", p=p, changes=chg, sold=sold, deliv=deliv,
                                                   chart=charts.step_chart([s[0] for s in series],
                                                                           [s[1] for s in series]),
-                                                  supply=supply[0] if supply else None, watch=watch))
+                                                  supply=supply[0] if supply else None, watch=watch,
+                                                  inc=stats.product_incoming(p["id"])))
 
 
 @route("GET", r"/shop/(\d+)/runs")
@@ -349,6 +366,10 @@ def shop_edit_post(req, q, sid):
             pass
     cfg["stats"] = st
     cfg["respect_robots"] = f.get("respect_robots") == "1"
+    try:
+        cfg["incoming_pages"] = max(0, min(30000, int(f.get("incoming_pages", cfg.get("incoming_pages") or 0) or 0)))
+    except ValueError:
+        pass
     if f.get("reset_detected") == "1" or cfg["start_url"] != old_start:
         cfg["detected"] = {}
     try:
@@ -466,6 +487,19 @@ def export(req, q, sid, kind):
                                         "Ostatnia zmiana"],
              [(r["name"], r["code"], r["category"], r["cur_stock"], r["value"], r["idle"], r["stock_since"])
               for r in stats.dead_stock(shop, dd, 100000)["rows"]])
+    if kind == "incoming":
+        inc = stats.incoming_page(shop)
+        _csv(f"{slug}-zapowiedziane-dostawy", ["Data dostawy", "Produkt", "Kod", "Kategoria", "Ilość", "Stan teraz",
+                                               "Sprzedaż / dzień", "Starczy na (dni)", "Pierwotna data",
+                                               "Przesunięć"],
+             [(u["date"], u["name"], u["code"], u["category"], u["qty"], u["cur_stock"], u["avg"], u["days_left"],
+               u["first_date"], u["shifts"]) for u in inc["upcoming"]])
+    if kind == "orderable":
+        inc = stats.incoming_page(shop)
+        _csv(f"{slug}-na-zamowienie", ["Produkt", "Kod", "Kategoria", "Stan", "Dostępne na zamówienie",
+                                       "Czas realizacji (dni)", "Sprzedaż / dzień", "Sprawdzono"],
+             [(r["name"], r["code"], r["category"], r["cur_stock"], r["inc_order_qty"], r["inc_order_days"],
+               r["avg"], r["inc_checked"]) for r in inc["orderable"]])
     if kind == "prices":
         o = stats.offer_changes(shop, period)
         _csv(f"{slug}-ceny-{period}", ["Dzień", "Produkt", "Kod", "Kategoria", "Cena przed", "Cena po", "Zmiana %"],

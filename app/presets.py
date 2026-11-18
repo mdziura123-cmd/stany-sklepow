@@ -30,12 +30,14 @@ DEFAULT = {
     "delay_seconds": 1.5,
     "max_pages": 300,
     "respect_robots": True,
+    # ile stron produktów dziennie sprawdzać pod kątem zapowiedzianych dostaw (0 = wyłączone)
+    "incoming_pages": 0,
     # wyniki automatycznego wykrywania (uzupełnia aplikacja)
     "detected": {},
 }
 
 # Podnieś numer po zmianie presetu – zapisane sklepy dostaną nowe reguły same.
-PRESET_VERSION = {"ringsen.com": 2}
+PRESET_VERSION = {"ringsen.com": 3}
 
 PRESETS = {
     "ringsen.com": {
@@ -46,6 +48,8 @@ PRESETS = {
         "zero_regex": r"Na zapytanie",
         "price_regex": r"PLN\s*(\d[\d \u00a0]*[.,]\d+)",
         "code_regex": r"Kod\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)",
+        # „Najbliższe dostawy” i „Dostępne na zamówienie” są tylko na stronach produktów
+        "incoming_pages": 600,
         "total_regex": r"Pozycje\D{0,5}\d+\s*[–\-]\s*\d+\s*z\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
     },
 }

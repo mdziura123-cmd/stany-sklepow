@@ -24,6 +24,27 @@
   <div class="card-body">{{ chart }}</div>
 </section>
 
+{% if inc.info and (inc.info.deliveries or inc.info.orderable) or inc.announcements %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('calendar') }} Dostawy według sklepu</h2><span class="hint">sprawdzono {{ inc.checked or '–' }}</span></div>
+  <div class="card-body flush tbl-wrap">
+    <table>
+      <tbody>
+      {% for d in (inc.info.deliveries if inc.info else []) %}
+        <tr><td>Najbliższa dostawa</td><td><b>{{ d.date|day }}</b></td><td class="r"><b>{{ d.qty|num }}</b></td></tr>
+      {% endfor %}
+      {% for o in (inc.info.orderable if inc.info else []) %}
+        <tr><td>Dostępne na zamówienie</td><td>{{ o.min }}{% if o.max and o.max != o.min %}–{{ o.max }}{% endif %} dni</td><td class="r">{{ o.qty|num }}</td></tr>
+      {% endfor %}
+      {% for a in inc.announcements if a.status == 'gone' %}
+        <tr class="muted"><td>Wcześniejsza zapowiedź</td><td>{{ a.date|day }}{% if a.first_date != a.date %} (pierwotnie {{ a.first_date|day }}){% endif %}</td><td class="r">{{ a.qty|num }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 {% if watch %}
 <section class="card pad">
   <form method="post" action="/shop/{{ shop.id }}/watch/{{ p.id }}" class="inline-input">

@@ -90,6 +90,31 @@ CREATE TABLE IF NOT EXISTS watch (
     min_stock REAL,
     created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS incoming_snap (
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL,
+    next_date TEXT,
+    next_qty REAL,
+    order_qty REAL,
+    order_days TEXT,
+    data TEXT,
+    PRIMARY KEY (product_id, ts)
+);
+CREATE TABLE IF NOT EXISTS announcements (
+    id INTEGER PRIMARY KEY,
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    first_ts TEXT NOT NULL,       -- kiedy pierwszy raz zobaczyliśmy zapowiedź
+    last_ts TEXT NOT NULL,        -- ostatnie sprawdzenie, w którym była widoczna
+    gone_ts TEXT,                 -- pierwsze sprawdzenie, w którym zniknęła
+    first_date TEXT NOT NULL,     -- pierwotnie zapowiedziana data
+    date TEXT NOT NULL,           -- aktualnie zapowiedziana data
+    qty REAL,
+    shifts INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL          -- open / gone
+);
+CREATE INDEX IF NOT EXISTS announcements_shop ON announcements(shop_id, status, date);
+CREATE INDEX IF NOT EXISTS announcements_product ON announcements(product_id);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -98,7 +123,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
 EXTRA_COLUMNS = {
     "products": {"cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
-                 "cur_ts": "TEXT", "first_ts": "TEXT"},
+                 "cur_ts": "TEXT", "first_ts": "TEXT",
+                 "inc_checked": "TEXT", "inc_next_date": "TEXT", "inc_next_qty": "REAL", "inc_order_qty": "REAL",
+                 "inc_order_days": "TEXT", "inc_json": "TEXT"},
     "changes": {"ts": "TEXT", "prev_ts": "TEXT"},
     "runs": {"ts": "TEXT"},
 }
@@ -129,7 +156,7 @@ def init():
         for name, typ in columns.items():
             if name not in cols:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
-                if table == "products" and name not in ("cur_ts", "first_ts"):
+                if table == "products" and name not in ("cur_ts", "first_ts") and not name.startswith("inc_"):
                     added = True
     c.execute("CREATE INDEX IF NOT EXISTS changes_shop_ts ON changes(shop_id, ts)")
     c.commit()

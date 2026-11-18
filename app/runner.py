@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import datetime, timedelta
 
-from . import backup, config, db, notify, presets
+from . import backup, config, db, incoming, notify, presets
 from .scraper import Crawler, StopRequested
 
 log = logging.getLogger("runner")
@@ -68,6 +68,8 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         log.info("Sklep %s: %s, produktów %d, zapytań %d", shop["name"], st, len(items), crawler.fetcher.requests)
         if items:
             backup.daily_backup()
+            if db.get_setting(f"incoming_day_{shop_id}") != day:
+                _check_incoming(shop_id, cfg, day)
             try:
                 hours = db.run_hours()
                 # podsumowanie poprzedniego dnia wysyłamy po pierwszym zaplanowanym odczycie dnia
@@ -83,6 +85,44 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         if run_id:
             db.run_end(run_id, "błąd", 0, crawler.fetcher.requests if crawler else 0,
                        f"{e}\n\n{traceback.format_exc()[-3000:]}")
+    finally:
+        status.clear()
+        status["running"] = False
+        _lock.release()
+
+
+def _check_incoming(shop_id: int, cfg: dict, day: str, limit: int | None = None):
+    """Zapowiedziane dostawy – raz dziennie, po pierwszym udanym odczycie dnia."""
+    if int(cfg.get("incoming_pages") or 0) <= 0 and not limit:
+        return
+    status.update(source="dostawy", page=0)
+    try:
+        res = incoming.check_shop(db.get_shop(shop_id), cfg, _stop, limit,
+                                  progress=lambda done, total: status.update(page=done, found=total))
+        db.set_setting(f"incoming_day_{shop_id}", day)
+        db.set_setting(f"incoming_last_{shop_id}", {"ts": f"{config.now():%Y-%m-%d %H:%M}", **res})
+    except StopRequested:
+        raise
+    except Exception:  # noqa: BLE001
+        log.exception("Błąd sprawdzania dostaw")
+
+
+def run_incoming(shop_id: int, limit: int | None = None):
+    """Ręczne „Sprawdź dostawy teraz”."""
+    if not _lock.acquire(blocking=False):
+        return
+    try:
+        _stop.clear()
+        shop = db.get_shop(shop_id)
+        if not shop:
+            return
+        cfg = presets.merged(shop["config"])
+        status.clear()
+        status.update(running=True, shop_id=shop_id, shop=shop["name"], started=time.time(),
+                      source="dostawy", page=0, found=0)
+        _check_incoming(shop_id, cfg, config.today(), limit or int(cfg.get("incoming_pages") or 0) or 200)
+    except StopRequested:
+        pass
     finally:
         status.clear()
         status["running"] = False

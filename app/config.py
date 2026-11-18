@@ -12,7 +12,7 @@ RUN_HOUR = DEFAULT_RUN_HOURS[0] if DEFAULT_RUN_HOURS else 5  # zgodność wstecz
 TZ = ZoneInfo(os.environ.get("TZ", "Europe/Warsaw"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 GIT_SHA = os.environ.get("GIT_SHA", "")[:7]          # ustawiane przy budowie obrazu
 BUILD_DATE = os.environ.get("BUILD_DATE", "")
 REPO = os.environ.get("APP_REPO", "mdziura123-cmd/stany-sklepow")
@@ -25,3 +25,7 @@ def now() -> datetime:
 
 def today() -> str:
     return now().strftime("%Y-%m-%d")
+
+
+def today_date():
+    return now().date()

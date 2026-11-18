@@ -19,6 +19,11 @@ Dane są przybliżone (sprzedaż i dostawa z tego samego dnia się sumują), ale
   co rośnie, co słabnie), duże zamówienia (jednorazowe duże spadki stanu).
 - **Dostawy** – co przyszło, kalendarz dostaw z 10 tygodni, dni tygodnia dostaw, średni odstęp
   i przewidywana kolejna dostawa.
+- **W drodze** – dostawy zapowiedziane przez sklep („Najbliższe dostawy”: data i ilość), czy towaru
+  wystarczy do dostawy, przesunięte terminy, terminowość (zapowiedź vs dzień, w którym stan naprawdę
+  wzrósł) oraz towar „Dostępny na zamówienie” z czasem realizacji. Dane są tylko na stronach produktów,
+  więc raz dziennie (po pierwszym odczycie) sprawdzana jest ustawiona liczba stron – dla Ringsen 600:
+  obserwowane, z zapowiedzią, wyprzedane i kończące się bestsellery, potem reszta po kolei.
 - **Magazyn** – na ile dni starczy towaru (ze średniej sprzedaży), martwy towar (bez ruchu 30/60/90 dni),
   wartość magazynu w czasie i wg kategorii.
 - **Ceny i oferta** – zmiany cen (także wg kategorii), nowe produkty, produkty, które zniknęły,

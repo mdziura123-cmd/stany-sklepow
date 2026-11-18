@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, empty, product_cell, csv, watch_btn %}
+{% block title %}{{ shop.name }} · W drodze{% endblock %}
+{% block content %}
+{% include "_shophead.html" %}
+
+{% if not inc.enabled %}
+<div class="alert info">{{ icon('calendar') }}<div>Sprawdzanie zapowiedzianych dostaw jest wyłączone dla tego sklepu.
+  Włączysz je w <a href="/shop/{{ shop.id }}/edit">Ustawieniach sklepu</a> (pole „Ile stron produktów sprawdzać dziennie”).</div></div>
+{% endif %}
+
+<div class="toolbar">
+  <span class="range">
+    {% if inc.last %}Ostatnie sprawdzenie {{ inc.last.ts }} · {{ inc.last.checked|num }} stron, z informacją o dostawie {{ inc.last.found|num }}
+    {% else %}Jeszcze nie sprawdzano – pierwsze sprawdzenie po najbliższym porannym odczycie{% endif %}
+  </span>
+  <form method="post" action="/shop/{{ shop.id }}/incoming/run" class="inline">
+    <button class="btn ghost small" {{ 'disabled' if runner_status.running }}>{{ icon('refresh') }}Sprawdź teraz</button>
+  </form>
+</div>
+
+<div class="kpis">
+  {{ kpi('Zapowiedziane dostawy', inc.upcoming|length|num, foot='produktów', dotvar='--series-2') }}
+  {{ kpi('W ciągu 7 dni', inc.next7_qty|num ~ ' szt.', foot=inc.next7_products|string ~ ' produktów') }}
+  {{ kpi('Zabraknie przed dostawą', inc.short|length|num, foot='sprzedawane produkty') }}
+  {{ kpi('Terminowość', ('%.0f'|format(inc.punct) ~ '%') if inc.punct is not none else '–',
+         foot=('z ' ~ inc.settled ~ ' dostaw, opóźnienie śr. ' ~ ('%.1f'|format(inc.avg_delay)|replace('.', ',')) ~ ' dni') if inc.settled else 'policzymy po pierwszych dostawach') }}
+</div>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('calendar') }} Kalendarz zapowiedzi</h2></div>
+    <div class="card-body">
+      {% if inc.cal_items %}{{ charts.bar_chart(inc.cal_items, '--series-2', width=480, height=220) }}
+      <p class="hint">Liczba produktów z dostawą zapowiedzianą na dany dzień.</p>
+      {% else %}{{ empty('Brak zapowiedzi', 'Sklep nie pokazuje jeszcze dat dostaw dla sprawdzonych produktów.', 'calendar') }}{% endif %}
+    </div>
+  </section>
+  <section class="card pad">
+    <h2>{{ icon('search') }} Zasięg sprawdzania</h2>
+    <p class="small">Sprawdzono w ostatnim tygodniu: <b>{{ inc.checked_week|num }}</b> z {{ inc.in_offer|num }} produktów w ofercie
+      (od początku: {{ inc.checked_ever|num }}).</p>
+    <div class="meter"><i style="width:{{ '%.1f'|format(100 * inc.checked_week / inc.in_offer if inc.in_offer else 0) }}%"></i></div>
+    <p class="hint">Daty dostaw są tylko na stronach produktów, więc codziennie sprawdzanych jest {{ inc.pages|num }} stron:
+      najpierw obserwowane, z zapowiedzianą dostawą, wyprzedane i kończące się bestsellery, potem reszta po kolei.
+      Liczbę zmienisz w ustawieniach sklepu.</p>
+  </section>
+</div>
+
+<section class="card mt">
+  <div class="card-head">
+    <h2>{{ icon('truck') }} Najbliższe dostawy</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-inc" style="width:180px;margin:0">{{ csv(shop, 'incoming') }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not inc.upcoming %}{{ empty('Brak zapowiedzianych dostaw', 'Pojawią się, gdy sklep pokaże „Najbliższe dostawy” na stronie produktu.', 'truck') }}{% else %}
+    <table id="t-inc">
+      <thead><tr><th></th><th>Data</th><th>Produkt</th><th class="r">Ilość</th><th class="r">Stan teraz</th>
+        <th class="r hide-m">Sprzedaż / dzień</th><th>Czy wystarczy?</th></tr></thead>
+      <tbody>
+      {% for u in inc.upcoming %}
+        <tr>
+          <td style="width:30px">{{ watch_btn(shop, u.id, u.id in watched) }}</td>
+          <td class="nowrap"><b>{{ u.date|day }}</b>
+            <div class="meta">{% if u.until < 0 %}{{ -u.until }} dni po terminie{% elif u.until == 0 %}dziś{% elif u.until == 1 %}jutro{% else %}za {{ u.until }} dni{% endif %}
+            {% if u.shifts %} · <span title="Pierwotnie {{ u.first_date|day }}">przesunięta {{ u.shifts }}×</span>{% endif %}</div></td>
+          <td>{{ product_cell(shop, u) }}</td>
+          <td class="r"><b>{{ u.qty|num }}</b></td>
+          <td class="r">{{ u.cur_stock|num }}</td>
+          <td class="r hide-m">{{ ('%.1f'|format(u.avg))|replace('.', ',') if u.avg else '–' }}</td>
+          <td>
+            {% if u.cover == 'empty' %}<span class="pill bad">brak towaru do dostawy</span>
+            {% elif u.cover == 'short' %}<span class="pill warn">zabraknie ok. {{ u.gap|days }} przed</span>
+            {% elif u.cover == 'ok' %}<span class="pill ok">wystarczy</span>
+            {% else %}<span class="muted small">brak sprzedaży</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <p class="hint" style="padding:0 18px 14px">„Czy wystarczy?” porównuje obecny stan ze średnią sprzedażą z 30 dni i datą dostawy.
+    Gwiazdka dodaje produkt do obserwowanych – dostaniesz powiadomienie, gdy termin się przesunie albo towaru zabraknie przed dostawą.</p>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('check') }} Czy dostawy przychodzą na czas</h2></div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not inc.history %}{{ empty('Jeszcze nic do porównania', 'Gdy zapowiedziana dostawa zniknie ze strony, aplikacja sprawdzi, kiedy stan naprawdę wzrósł.', 'clock') }}{% else %}
+    <table>
+      <thead><tr><th>Produkt</th><th>Zapowiedź</th><th>Przyszło</th><th class="r">Różnica</th><th class="r hide-m">Ilość: zapowiedź / przybyło</th></tr></thead>
+      <tbody>
+      {% for h in inc.history %}
+        <tr>
+          <td>{{ product_cell(shop, h) }}</td>
+          <td class="nowrap">{{ h.date|day }}{% if h.first_date != h.date %}<div class="meta">pierwotnie {{ h.first_date|day }}</div>{% endif %}</td>
+          <td class="nowrap">{{ h.arrived|day if h.arrived else '–' }}</td>
+          <td class="r">
+            {% if h.delay is none %}<span class="pill" title="Zapowiedź zniknęła, ale stan nie wzrósł">bez dostawy</span>
+            {% elif h.delay <= 0 %}<span class="pill ok">{{ 'na czas' if h.delay == 0 else (-h.delay ~ ' dni wcześniej') }}</span>
+            {% elif h.delay == 1 %}<span class="pill ok">+1 dzień</span>
+            {% else %}<span class="pill {{ 'bad' if h.delay > 7 else 'warn' }}">+{{ h.delay }} dni</span>{% endif %}
+          </td>
+          <td class="r hide-m">{{ h.qty|num }} / {{ h.got|num if h.got is not none else '–' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <p class="hint" style="padding:0 18px 14px">Dzień przyjścia to dzień, w którym stan wzrósł (wzrost widoczny o 5:00 liczony jako dostawa z poprzedniego dnia).
+    „Na czas” obejmuje dostawy do 1 dnia po terminie.</p>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ icon('box') }} Dostępne na zamówienie</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-ord" style="width:180px;margin:0">{{ csv(shop, 'orderable') }}</div>
+  </div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not inc.orderable %}{{ empty('Brak danych', 'Pokazujemy tu ilości, które sklep może sprowadzić („Dostępne na zamówienie”).', 'box') }}{% else %}
+    <table id="t-ord">
+      <thead><tr><th>Produkt</th><th class="r">Stan</th><th class="r">Na zamówienie</th><th class="r">Czas realizacji</th>
+        <th class="r hide-m">Najwcześniej</th><th class="r hide-m">Sprzedaż / dzień</th></tr></thead>
+      <tbody>
+      {% for r in inc.orderable %}
+        <tr>
+          <td>{{ product_cell(shop, r) }}</td>
+          <td class="r">{% if (r.cur_stock or 0) <= 0 %}<span class="pill bad">0</span>{% else %}{{ r.cur_stock|num }}{% endif %}</td>
+          <td class="r"><b>{{ r.inc_order_qty|num }}</b></td>
+          <td class="r nowrap">{{ r.inc_order_days ~ ' dni' if r.inc_order_days else '–' }}</td>
+          <td class="r hide-m muted">{{ r.earliest|day if r.earliest else '–' }}</td>
+          <td class="r hide-m">{{ ('%.1f'|format(r.avg))|replace('.', ',') if r.avg else '–' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <p class="hint" style="padding:0 18px 14px">{{ inc.orderable_count|num }} produktów. Najpierw te bez towaru, które się sprzedają.
+    „Najwcześniej” = dziś + najkrótszy czas realizacji.</p>
+</section>
+{% endblock %}
