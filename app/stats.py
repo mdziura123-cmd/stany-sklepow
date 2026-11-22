@@ -552,7 +552,7 @@ def day_summary(shop: dict, day: str | None = None) -> dict | None:
 # ---------------------------------------------------------------- pora dnia
 
 def windows_for(hours: list[int]) -> list[dict]:
-    """Okna między kolejnymi godzinami pobierania, np. [5,16,22] → 22–5, 5–16, 16–22."""
+    """Okna między kolejnymi godzinami pobierania, np. [8,17,23] → 23–8, 8–17, 17–23."""
     out = []
     for i, h in enumerate(hours):
         p = hours[i - 1]

@@ -28,7 +28,7 @@
     <input name="incoming_pages" inputmode="numeric" value="{{ cfg.incoming_pages or 0 }}"></label>
   <p class="hint">Daty „Najbliższe dostawy” i ilości „Dostępne na zamówienie” są tylko na stronach produktów.
     Sprawdzane raz dziennie po pierwszym odczycie: najpierw obserwowane, z zapowiedzianą dostawą i kończące się,
-    potem reszta po kolei. Przy przerwie {{ cfg.delay_seconds }} s 600 stron to ok. {{ ((600 * cfg.delay_seconds|float) / 60)|round|int }} min.</p>
+    potem reszta po kolei. Przy przerwie {{ cfg.delay_seconds }} s 200 stron to ok. {{ ((200 * cfg.delay_seconds|float) / 60)|round|int }} min.</p>
 
   <details {{ 'open' if error }}>
     <summary>Zaawansowane – reguły odczytu {% if cfg.preset %}(gotowe ustawienia: {{ cfg.preset }}){% endif %}</summary>

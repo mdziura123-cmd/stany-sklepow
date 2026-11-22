@@ -9,7 +9,7 @@
 </div>
 
 {% if dp.hours|length < 2 %}
-<div class="card">{{ empty('Potrzebne są co najmniej dwa pobrania dziennie', 'Ustaw godziny pobierania w Ustawieniach → Harmonogram, np. 5, 16, 22.', 'sun') }}</div>
+<div class="card">{{ empty('Potrzebne są co najmniej dwa pobrania dziennie', 'Ustaw godziny pobierania w Ustawieniach → Harmonogram, np. 8, 17, 23.', 'sun') }}</div>
 {% elif not dp.enough %}
 <div class="card">{{ empty('Zbieram dane', 'Statystyka pory dnia pojawi się po pierwszych pełnych oknach między odczytami o ' ~ run_hours_txt ~ '. Pierwsze wyniki będą jutro rano, a wiarygodne po 1–2 tygodniach.', 'sun') }}</div>
 {% else %}

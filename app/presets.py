@@ -27,7 +27,7 @@ DEFAULT = {
     # liczba wszystkich produktów na liście, np. "Pozycje 1–20 z 4776"
     "total_regex": r"(?:Pozycje|Produkty|Wyniki|Pokazano|Wyświetlono)\D{0,15}\d+\s*[–\-]\s*\d+\s*(?:z|of|spośród)\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
     "pagination": "auto",
-    "delay_seconds": 1.5,
+    "delay_seconds": 3,
     "max_pages": 300,
     "respect_robots": True,
     # ile stron produktów dziennie sprawdzać pod kątem zapowiedzianych dostaw (0 = wyłączone)
@@ -37,7 +37,7 @@ DEFAULT = {
 }
 
 # Podnieś numer po zmianie presetu – zapisane sklepy dostaną nowe reguły same.
-PRESET_VERSION = {"ringsen.com": 3}
+PRESET_VERSION = {"ringsen.com": 4}
 
 PRESETS = {
     "ringsen.com": {
@@ -49,7 +49,9 @@ PRESETS = {
         "price_regex": r"PLN\s*(\d[\d \u00a0]*[.,]\d+)",
         "code_regex": r"Kod\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)",
         # „Najbliższe dostawy” i „Dostępne na zamówienie” są tylko na stronach produktów
-        "incoming_pages": 600,
+        "incoming_pages": 200,
+        # łagodne tempo, żeby nie obciążać serwera sklepu (regulamin §3 ust. 3: zakaz zakłócania działania)
+        "delay_seconds": 4,
         "total_regex": r"Pozycje\D{0,5}\d+\s*[–\-]\s*\d+\s*z\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
     },
 }

@@ -96,7 +96,7 @@ Ręcznie: w CasaOS ustawienia aplikacji → **Update** albo w terminalu
 
 | Zmienna    | Domyślnie       | Opis                                  |
 |------------|-----------------|---------------------------------------|
-| `RUN_HOURS` | `5,16,22`      | godziny pobierania (zmienisz też w panelu: Ustawienia → Harmonogram) |
+| `RUN_HOURS` | `8,17,23`      | godziny pobierania (zmienisz też w panelu: Ustawienia → Harmonogram) |
 | `UPDATE_HOUR` | `2`          | godzina aktualizacji (tylko do wyświetlania; harmonogram ustawia `WATCHTOWER_SCHEDULE`) |
 | `BACKUP_DIR` | `/data/backups` | folder kopii zapasowych (w docker-compose.yml: `/backups`) |
 | `TZ`       | `Europe/Warsaw` | strefa czasowa                        |

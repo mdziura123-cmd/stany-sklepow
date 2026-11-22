@@ -10,7 +10,7 @@ services:
       - "8090:8090"
     environment:
       TZ: Europe/Warsaw
-      RUN_HOURS: "5,16,22" # godziny pobierania (można zmienić w panelu)
+      RUN_HOURS: "8,17,23" # godziny pobierania (można zmienić w panelu)
       UPDATE_HOUR: "2"     # tylko informacyjnie – godzina aktualizacji z Watchtowera
       BACKUP_DIR: /backups # bez tego kopie trafiają do /data/backups
     volumes:

@@ -353,7 +353,7 @@ def shop_edit_post(req, q, sid):
         if k in f:
             cfg[k] = f.get(k, "")
     try:
-        cfg["delay_seconds"] = max(0.3, float(f.get("delay_seconds", "1.5").replace(",", ".")))
+        cfg["delay_seconds"] = max(0.3, float(f.get("delay_seconds", "3").replace(",", ".")))
         cfg["max_pages"] = max(1, int(f.get("max_pages", "300")))
     except ValueError:
         pass
@@ -551,7 +551,7 @@ def settings_schedule(req, q):
     raw = req.form().get("hours", "")
     hrs = sorted({int(x) for x in re.findall(r"\d{1,2}", raw) if 0 <= int(x) <= 23})
     if not hrs:
-        raise Redirect("/settings?err=" + quote("Podaj co najmniej jedną godzinę, np. 5, 16, 22.") + "#harmonogram")
+        raise Redirect("/settings?err=" + quote("Podaj co najmniej jedną godzinę, np. 8, 17, 23.") + "#harmonogram")
     db.set_setting("run_hours", hrs)
     raise Redirect("/settings?msg=" + quote("Zapisano godziny pobierania: " + db.run_hours_text()) + "#harmonogram")
 

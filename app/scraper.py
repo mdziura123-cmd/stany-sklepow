@@ -141,7 +141,7 @@ class Fetcher:
     """Pobiera strony z przerwą między zapytaniami i szacunkiem dla robots.txt."""
 
     def __init__(self, cfg: dict, stop: threading.Event | None = None):
-        self.delay = max(0.3, float(cfg.get("delay_seconds") or 1.5))
+        self.delay = max(0.3, float(cfg.get("delay_seconds") or 3))
         self.respect_robots = bool(cfg.get("respect_robots", True))
         self.stop = stop or threading.Event()
         self.session = requests.Session()

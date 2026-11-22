@@ -164,6 +164,18 @@ def init():
         migrate_v2()
     c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '3')")
     c.commit()
+    _migrate_run_hours()
+
+
+def _migrate_run_hours():
+    """Jednorazowo: stare domyślne godziny 5, 16, 22 → 8, 17, 23 (własne godziny zostają bez zmian)."""
+    if get_setting("run_hours_v2"):
+        return
+    hrs = get_setting("run_hours")
+    if not hrs or sorted(int(h) for h in hrs) == [5, 16, 22]:
+        set_setting("run_hours", [8, 17, 23])
+        log.info("Godziny pobierania zmienione na 8:00, 17:00, 23:00")
+    set_setting("run_hours_v2", True)
 
 
 def migrate_v2():
@@ -540,7 +552,7 @@ def set_watch(shop_id: int, pid: int, on: bool, min_stock=None):
 def run_hours() -> list[int]:
     hrs = get_setting("run_hours")
     if not hrs:
-        hrs = config.DEFAULT_RUN_HOURS or [5, 16, 22]
+        hrs = config.DEFAULT_RUN_HOURS or [8, 17, 23]
     return sorted({int(h) for h in hrs if 0 <= int(h) <= 23})
 
 
