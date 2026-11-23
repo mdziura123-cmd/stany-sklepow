@@ -26,8 +26,13 @@ env = Environment(loader=FileSystemLoader(os.path.join(HERE, "templates")),
 # ---------------------------------------------------------------- formatowanie
 
 def fmt_num(v, digits=0):
-    if v is None:
+    if v is None or v == "":
         return "–"
+    if isinstance(v, str):  # starsze wiersze w bazie potrafią mieć liczbę zapisaną jako tekst
+        try:
+            v = float(v.replace(" ", "").replace(",", "."))
+        except ValueError:
+            return v
     if isinstance(v, float) and not v.is_integer():
         s = f"{v:,.{max(digits, 1) if digits else 2}f}".rstrip("0").rstrip(".")
     else:

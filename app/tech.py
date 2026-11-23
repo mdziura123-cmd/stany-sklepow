@@ -26,6 +26,15 @@ def _dt(s: str | None) -> datetime | None:
     return dt.astimezone(config.TZ).replace(tzinfo=None) if dt.tzinfo else dt
 
 
+def _int(v, default=None):
+    if v is None or v == "":
+        return default
+    try:
+        return int(float(str(v).replace(",", ".")))
+    except ValueError:
+        return default
+
+
 def fmt_dur(sec) -> str:
     if sec is None:
         return "–"
@@ -71,6 +80,8 @@ def _p90(xs):
 def enrich(r) -> dict:
     """Jeden wiersz z tabeli runs + wyliczone czasy."""
     d = dict(r)
+    for k in ("found", "requests", "errors", "inc_requests", "inc_checked", "inc_errors"):
+        d[k] = _int(d.get(k), None if k != "found" and k != "requests" else 0)
     st, fin = _dt(d["started"]), _dt(d["finished"])
     slot = _dt(d.get("ts")) if d.get("ts") and len(d["ts"]) == 16 else None
     inc_st, inc_fin = _dt(d.get("inc_started")), _dt(d.get("inc_finished"))
