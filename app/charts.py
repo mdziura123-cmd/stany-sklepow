@@ -108,6 +108,7 @@ def bar_chart(items: list[dict], var="--series-1", height=200, fmt=num, unit="",
     n = len(items)
     slot = pw / n
     bw = min(56, slot * 0.62)
+    every = max(1, math.ceil(n / 12))  # przy wielu słupkach podpisujemy co któryś
     parts = [f'<svg class="chart" viewBox="0 0 {W} {H}" role="img">']
     for v in yt:
         yy = T + ph - v / mx * ph
@@ -122,12 +123,14 @@ def bar_chart(items: list[dict], var="--series-1", height=200, fmt=num, unit="",
             x0, y0 = cx - bw / 2, T + ph - h
             # słupek z zaokrąglonym tylko górnym końcem
             parts.append(
-                f'<path class="bar" style="fill:var({var})" d="M{x0:.1f},{T + ph:.1f} V{y0 + r:.1f} '
+                f'<path class="bar" style="fill:var({it.get("var") or var})" d="M{x0:.1f},{T + ph:.1f} V{y0 + r:.1f} '
                 f'Q{x0:.1f},{y0:.1f} {x0 + r:.1f},{y0:.1f} H{x0 + bw - r:.1f} '
                 f'Q{x0 + bw:.1f},{y0:.1f} {x0 + bw:.1f},{y0 + r:.1f} V{T + ph:.1f} Z"/>')
         parts.append(f'<rect class="hit" x="{L + slot * i:.1f}" y="{T}" width="{slot:.1f}" height="{ph}" '
                      f'data-tip="{escape(tip)}"/>')
-        parts.append(f'<text class="axis" x="{cx:.1f}" y="{H - 8}" text-anchor="middle">{escape(it["label"])}</text>')
+        if i % every == 0:
+            parts.append(f'<text class="axis" x="{cx:.1f}" y="{H - 8}" text-anchor="middle">'
+                         f'{escape(it["label"])}</text>')
     parts.append("</svg>")
     return Markup("".join(parts))
 

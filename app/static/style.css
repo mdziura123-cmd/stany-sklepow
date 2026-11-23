@@ -311,3 +311,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 }
 .win { border-left: 3px solid var(--series-1); }
 .win.best { border-left-color: var(--good); }
+
+/* diagnostyka pobrań */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84em; font-variant-numeric: tabular-nums; }
+table.kv { width: 100%; }
+table.kv th { text-align: left; font-weight: 550; color: var(--text-2); width: 240px; padding: 6px 12px 6px 0; vertical-align: top; }
+table.kv td { padding: 6px 0; word-break: break-all; }
+tr.muted td { color: var(--muted); }
+.card-head .hint .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 3px 0 10px; }

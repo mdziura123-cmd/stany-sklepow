@@ -1,28 +1,139 @@
 {% extends "base.html" %}
-{% from "_ui.html" import icon, empty, status %}
-{% block title %}{{ shop.name }} · Pobrania{% endblock %}
+{% from "_ui.html" import icon, kpi, empty, status %}
+{% block title %}{{ shop.name }} · Diagnostyka{% endblock %}
 {% block content %}
 {% include "_shophead.html" %}
+{% set s = t.sys %}
+<div class="toolbar">
+  <div class="seg">
+  {% for k, lab in [('7','7 dni'),('30','30 dni'),('90','90 dni'),('all','całość')] %}<a href="?period={{ k }}" class="{{ 'on' if period==k }}">{{ lab }}</a>{% endfor %}
+  </div>
+  <span class="range mono">serwer: {{ s.now.strftime('%Y-%m-%d %H:%M:%S') }} · harmonogram: {{ run_hours_txt }}{% if s.next %} · następne: {{ s.next.strftime('%d.%m %H:%M') }}{% endif %}{% if not shop.enabled %} · <b>wstrzymane</b>{% endif %}</span>
+</div>
+
+{% if s.running %}
+<div class="alert">{{ icon('refresh') }}<div>Trwa: <b>{{ s.running.shop }}</b> · etap <code>{{ s.running.source }}</code>{% if s.running.page %} · strona {{ s.running.page }}{% endif %}{% if s.running.found %} · {{ s.running.found|num }}{% endif %}</div></div>
+{% endif %}
+{% if t.last_good and t.since_good is not none and t.since_good > 13 * 3600 %}
+<div class="alert bad">{{ icon('alert') }}<div>Ostatni udany odczyt skończył się {{ t.since_good|dur }} temu ({{ t.last_good.all_end.strftime('%d.%m %H:%M') }}). Sprawdź log poniżej.</div></div>
+{% endif %}
+
+{% if not t.runs %}
+<div class="card">{{ empty('Brak pobrań w tym okresie', 'Kliknij „Pobierz teraz” albo poczekaj na najbliższą godzinę: ' ~ run_hours_txt ~ '.', 'clock') }}</div>
+{% else %}
+
+<div class="kpis">
+  {{ kpi('Skuteczność', ('%.0f'|format(t.success_pct) ~ '%') if t.success_pct is not none else '–',
+         foot=(t.counts['ok'] ~ ' ok · ' ~ t.counts['częściowy'] ~ ' częśc. · ' ~ (t.counts['błąd'] + t.counts['przerwany']) ~ ' nieudane'), dotvar='--good') }}
+  {{ kpi('Zaplanowane odczyty', (t.coverage.done ~ ' / ' ~ t.coverage.expected) if t.coverage.expected else '–',
+         foot=(('%.0f'|format(t.coverage.pct) ~ '% wykonanych') if t.coverage.pct is not none else 'brak danych')) }}
+  {{ kpi('Czas odczytu stanów', t.dur_med|dur, foot='mediana · min ' ~ t.dur_min|dur ~ ' · max ' ~ t.dur_max|dur) }}
+  {{ kpi('Opóźnienie startu', t.delay_avg|delay, foot='średnio · max ' ~ t.delay_max|delay) }}
+  {{ kpi('Zapytania / odczyt', t.req_avg|num, foot=(t.rpm_avg|num ~ ' / min · nieudanych ' ~ t.err_total|num) if t.rpm_avg else 'nieudanych ' ~ t.err_total|num) }}
+  {{ kpi('Produktów / odczyt', t.found_avg|num, foot=('sprawdzanie dostaw: ' ~ t.inc_med|dur) if t.inc_med else '') }}
+</div>
+
 <section class="card">
-  <div class="card-head"><h2>Historia pobrań</h2><span class="hint">Automatycznie codziennie o {{ run_hours_txt }}{% if not shop.enabled %} (wstrzymane){% endif %}</span></div>
+  <div class="card-head"><h2>Czas trwania ostatnich odczytów (min)</h2>
+    <span class="hint"><span class="dot" style="background:var(--good)"></span> ok
+      <span class="dot" style="background:var(--warn)"></span> częściowy
+      <span class="dot" style="background:var(--bad)"></span> błąd / przerwany</span></div>
+  <div class="card-body">
+    {{ charts.bar_chart(t.chart, height=220, unit=' min') }}
+    <p class="hint">Sam odczyt stanów, bez sprawdzania dostaw. Najedź na słupek, żeby zobaczyć szczegóły.</p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('clock') }} Według godziny harmonogramu</h2></div>
   <div class="card-body flush tbl-wrap">
-  {% if not runs %}{{ empty('Jeszcze nie pobierano', 'Kliknij „Pobierz teraz” albo poczekaj na najbliższą godzinę: ' ~ run_hours_txt ~ '.', 'clock') }}{% else %}
   <table>
-    <thead><tr><th>Start</th><th>Status</th><th class="r">Produkty</th><th class="r hide-m">Zapytania</th><th class="r">Czas</th></tr></thead>
+    <thead><tr><th>Godzina</th><th class="r">Próby</th><th class="r">Udane</th><th class="r">Opóźn. śr.</th><th class="r">Czas (mediana)</th><th class="r hide-m">Max</th><th class="r hide-m">Produkty</th></tr></thead>
     <tbody>
-    {% for r in runs %}
-      <tr>
-        <td class="nowrap">{{ r.started[:16]|replace("T"," ") }}</td>
-        <td>{{ status(r.status) }}</td>
-        <td class="r">{{ r.found|num }}</td>
-        <td class="r hide-m">{{ r.requests|num }}</td>
-        <td class="r muted">{% if r.finished and r.finished > r.started %}{% set secs = ((r.finished[11:13]|int*3600 + r.finished[14:16]|int*60 + r.finished[17:19]|int) - (r.started[11:13]|int*3600 + r.started[14:16]|int*60 + r.started[17:19]|int)) %}{{ (secs // 60) if secs >= 0 else '–' }} min{% else %}–{% endif %}</td>
+    {% for r in t.slots %}
+      <tr class="{{ '' if r.current else 'muted' }}">
+        <td class="nowrap"><b>{{ r.label }}</b>{% if not r.current and r.label != 'ręczne' %} <span class="small muted">(dawniej)</span>{% endif %}</td>
+        <td class="r">{{ r.n }}</td>
+        <td class="r">{% if r.pct is not none %}{{ '%.0f'|format(r.pct) }}%{% else %}–{% endif %}</td>
+        <td class="r">{{ r.delay_avg|delay }}</td>
+        <td class="r">{{ r.dur_med|dur }}</td>
+        <td class="r hide-m">{{ r.dur_max|dur }}</td>
+        <td class="r hide-m">{{ r.found_avg|num }}</td>
       </tr>
-      {% if r.message %}<tr class="msg"><td colspan="5"><details><summary>szczegóły</summary><pre>{{ r.message }}</pre></details></td></tr>{% endif %}
     {% endfor %}
     </tbody>
   </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('alert') }} Brakujące odczyty</h2>
+    {% if t.coverage.from %}<span class="hint">od {{ t.coverage.from.strftime('%d.%m.%Y') }}, godziny {{ run_hours_txt }}</span>{% endif %}</div>
+  <div class="card-body flush tbl-wrap">
+  {% if not t.coverage.expected %}{{ empty('Brak danych', 'Pojawią się po pierwszym planowym pobraniu.', 'clock') }}
+  {% elif not t.coverage.missing %}{{ empty('Wszystkie zaplanowane odczyty się udały', '', 'check') }}
+  {% else %}
+  <table>
+    <thead><tr><th>Zaplanowany odczyt</th><th>Co się stało</th></tr></thead>
+    <tbody>
+    {% for m in t.coverage.missing %}
+      <tr><td class="nowrap mono">{{ m.slot.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{% if m.tried %}<span class="pill bad">{{ icon('x') }}nieudane próby</span>{% else %}<span class="pill">nie uruchomiono</span> <span class="small muted">serwer wyłączony lub inne pobieranie w toku</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if t.coverage.missing_n > t.coverage.missing|length %}<p class="hint" style="padding:0 16px">… i {{ t.coverage.missing_n - t.coverage.missing|length }} starszych.</p>{% endif %}
   {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('list') }} Log pobrań</h2>
+    <div class="actions"><input type="search" placeholder="Filtruj…" data-filter="#t-runs" style="width:180px;margin:0"></div></div>
+  <div class="card-body flush tbl-wrap tall">
+  <table id="t-runs">
+    <thead><tr>
+      <th class="r">#</th><th>Tryb</th><th>Start</th><th>Koniec</th><th class="r">Czas</th><th class="r hide-m">Opóźn.</th>
+      <th>Status</th><th class="r">Produkty</th><th class="r hide-m">Zapytania</th><th class="r hide-m">Nieudane</th><th class="r hide-m">Dostawy</th>
+    </tr></thead>
+    <tbody>
+    {% for r in t.log %}
+      <tr>
+        <td class="r muted">{{ r.id }}</td>
+        <td class="nowrap">{% if r.planned %}{{ r.slot_hour }}:00{% else %}<span class="muted">ręczne</span>{% endif %}</td>
+        <td class="nowrap mono">{{ r.start_dt.strftime('%Y-%m-%d %H:%M:%S') if r.start_dt else '–' }}</td>
+        <td class="nowrap mono">{{ r.end_dt.strftime('%H:%M:%S') if r.end_dt else '–' }}{% if r.end_dt and r.start_dt and r.end_dt.date() != r.start_dt.date() %} <span class="small muted">+1 d</span>{% endif %}</td>
+        <td class="r nowrap">{{ r.dur|dur }}</td>
+        <td class="r nowrap hide-m">{{ r.delay|delay }}</td>
+        <td>{{ status(r.status) }}</td>
+        <td class="r">{{ r.found|num }}</td>
+        <td class="r hide-m nowrap">{{ r.requests|num }}{% if r.rpm %} <span class="small muted">· {{ r.rpm }}/min</span>{% endif %}</td>
+        <td class="r hide-m">{% if r.errors is not none %}{{ r.errors|num }}{% if r.err_pct and r.err_pct >= 1 %} <span class="small muted">({{ '%.0f'|format(r.err_pct) }}%)</span>{% endif %}{% else %}–{% endif %}</td>
+        <td class="r nowrap hide-m">{% if r.inc_dur is not none %}{{ r.inc_dur|dur }}{% else %}–{% endif %}</td>
+      </tr>
+      {% if r.message or r.mode %}<tr class="msg"><td colspan="11"><details><summary>szczegóły{% if r.mode %} · tryb crawlera: <code>{{ r.mode }}</code>{% endif %}{% if r.all_end and r.inc_dur %} · dostawy: {{ r.inc_checked|num }} stron, {{ r.inc_requests|num }} zapytań, nieudanych {{ r.inc_errors|num }} · całość do {{ r.all_end.strftime('%H:%M:%S') }} ({{ r.total_dur|dur }}){% endif %}</summary><pre>{{ r.message }}</pre></details></td></tr>{% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if t.runs|length > t.log|length %}<p class="hint" style="padding:8px 16px">Pokazano 200 najnowszych z {{ t.runs|length }} pobrań w tym okresie.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('sliders') }} Konfiguracja techniczna</h2></div>
+  <div class="card-body">
+    <table class="kv">
+      <tr><th>Wersja aplikacji</th><td class="mono">{{ s.version }}{% if s.sha %} · {{ s.sha }}{% endif %}</td></tr>
+      <tr><th>Reguły sklepu</th><td>{{ s.preset }}{% if s.preset_version %} <span class="muted">(wersja {{ s.preset_version }})</span>{% endif %}{% if s.mode %} · tryb <code>{{ s.mode }}</code>{% endif %}</td></tr>
+      <tr><th>Przerwa między zapytaniami</th><td>{{ s.delay }} s</td></tr>
+      <tr><th>Limit stron listy</th><td>{{ s.max_pages|num }}</td></tr>
+      <tr><th>Sprawdzanie dostaw</th><td>{% if s.incoming_pages %}{{ s.incoming_pages|num }} stron dziennie, po pierwszym udanym odczycie dnia{% else %}wyłączone{% endif %}</td></tr>
+      <tr><th>robots.txt</th><td>{{ 'przestrzegany' if s.robots else 'ignorowany' }}</td></tr>
+      <tr><th>User-Agent</th><td><code>{{ s.user_agent }}</code></td></tr>
+      <tr><th>Baza danych</th><td>{% if s.db_size %}{{ '%.1f'|format(s.db_size / 1048576)|replace('.', ',') }} MB{% else %}–{% endif %} · łącznie {{ t.req_total|num }} zapytań w wybranym okresie</td></tr>
+    </table>
+    <p class="hint">Nieudane = zapytania, które po ponowieniach nie zwróciły strony. Opóźnienie = start względem godziny z harmonogramu (harmonogram sprawdza co minutę, a po nieudanej próbie ponawia najwcześniej po godzinie). Czasy końca, liczba nieudanych zapytań i czas sprawdzania dostaw zapisują się od tej wersji.</p>
   </div>
 </section>
 {% endblock %}

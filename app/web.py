@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import auth, backup, charts, config, db, notify, presets, runner, stats, updates
+from . import auth, backup, charts, config, db, notify, presets, runner, stats, tech, updates
 from .scraper import Rules, test_shop
 
 log = logging.getLogger("web")
@@ -72,7 +72,7 @@ def fmt_size(b):
     return f"{b / 1024 / 1024:.1f} MB".replace(".", ",")
 
 
-env.filters.update(int=fmt_num, num=fmt_num, money=fmt_money, pct=fmt_pct, day=fmt_day, short=fmt_short,
+env.filters.update(dur=tech.fmt_dur, delay=tech.fmt_delay, int=fmt_num, num=fmt_num, money=fmt_money, pct=fmt_pct, day=fmt_day, short=fmt_short,
                    size=fmt_size, days=fmt_days)
 env.globals.update(VERSION=config.VERSION, GIT_SHA=config.GIT_SHA, PERIODS=stats.PERIODS,
                    runner_status=runner.status, RUN_HOUR=config.RUN_HOUR, UPDATE_HOUR=config.UPDATE_HOUR,
@@ -327,7 +327,9 @@ def product_view(req, q, sid, pid):
 @route("GET", r"/shop/(\d+)/runs")
 def shop_runs(req, q, sid):
     shop = shop_or_404(sid)
-    return render("runs.html", req, **shop_ctx(shop, "runs", runs=db.runs(shop["id"])))
+    period = q.get("period", "30")
+    period = period if period in tech.PERIOD_DAYS else "30"
+    return render("runs.html", req, **shop_ctx(shop, "runs", t=tech.report(shop, period), period=period))
 
 
 @route("GET", r"/shop/(\d+)/edit")

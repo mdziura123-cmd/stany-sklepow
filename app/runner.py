@@ -64,12 +64,13 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         st = "błąd" if not items else ("częściowy" if incomplete else "ok")
         if not items:
             msg += "\nNie znaleziono żadnych produktów ze stanem."
-        db.run_end(run_id, st, len(items), crawler.fetcher.requests, msg.strip())
+        db.run_end(run_id, st, len(items), crawler.fetcher.requests, msg.strip(),
+                   errors=crawler.fetcher.errors, mode=rep.mode_used)
         log.info("Sklep %s: %s, produktów %d, zapytań %d", shop["name"], st, len(items), crawler.fetcher.requests)
         if items:
             backup.daily_backup()
             if db.get_setting(f"incoming_day_{shop_id}") != day:
-                _check_incoming(shop_id, cfg, day)
+                _check_incoming(shop_id, cfg, day, run_id=run_id)
             try:
                 hours = db.run_hours()
                 # podsumowanie poprzedniego dnia wysyłamy po pierwszym zaplanowanym odczycie dnia
@@ -79,7 +80,8 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
                 log.exception("Błąd wysyłania powiadomienia")
     except StopRequested:
         if run_id:
-            db.run_end(run_id, "przerwany", 0, crawler.fetcher.requests if crawler else 0, "Zatrzymano ręcznie.")
+            db.run_end(run_id, "przerwany", 0, crawler.fetcher.requests if crawler else 0, "Zatrzymano ręcznie.",
+                       errors=crawler.fetcher.errors if crawler else None)
     except Exception as e:  # noqa: BLE001
         log.exception("Błąd pobierania")
         if run_id:
@@ -91,16 +93,19 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         _lock.release()
 
 
-def _check_incoming(shop_id: int, cfg: dict, day: str, limit: int | None = None):
+def _check_incoming(shop_id: int, cfg: dict, day: str, limit: int | None = None, run_id: int | None = None):
     """Zapowiedziane dostawy – raz dziennie, po pierwszym udanym odczycie dnia."""
     if int(cfg.get("incoming_pages") or 0) <= 0 and not limit:
         return
     status.update(source="dostawy", page=0)
+    inc_started = config.now().isoformat(timespec="seconds")
     try:
         res = incoming.check_shop(db.get_shop(shop_id), cfg, _stop, limit,
                                   progress=lambda done, total: status.update(page=done, found=total))
         db.set_setting(f"incoming_day_{shop_id}", day)
         db.set_setting(f"incoming_last_{shop_id}", {"ts": f"{config.now():%Y-%m-%d %H:%M}", **res})
+        if run_id:
+            db.run_incoming_info(run_id, inc_started, config.now().isoformat(timespec="seconds"), res)
     except StopRequested:
         raise
     except Exception:  # noqa: BLE001

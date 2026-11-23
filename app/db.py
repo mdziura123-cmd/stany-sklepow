@@ -127,7 +127,9 @@ EXTRA_COLUMNS = {
                  "inc_checked": "TEXT", "inc_next_date": "TEXT", "inc_next_qty": "REAL", "inc_order_qty": "REAL",
                  "inc_order_days": "TEXT", "inc_json": "TEXT"},
     "changes": {"ts": "TEXT", "prev_ts": "TEXT"},
-    "runs": {"ts": "TEXT"},
+    "runs": {"ts": "TEXT", "errors": "INTEGER", "mode": "TEXT",
+             "inc_started": "TEXT", "inc_finished": "TEXT", "inc_requests": "INTEGER",
+             "inc_checked": "INTEGER", "inc_errors": "INTEGER"},
 }
 
 
@@ -319,12 +321,31 @@ def run_start(shop_id: int, day: str, ts: str | None = None) -> int:
     return cur.lastrowid
 
 
-def run_end(run_id: int, status: str, found: int, requests: int, message: str):
+def run_end(run_id: int, status: str, found: int, requests: int, message: str,
+            errors: int | None = None, mode: str | None = None):
     conn().execute(
-        "UPDATE runs SET finished=?, status=?, found=?, requests=?, message=? WHERE id=?",
-        (config.now().isoformat(timespec="seconds"), status, found, requests, message[:20000], run_id),
+        "UPDATE runs SET finished=?, status=?, found=?, requests=?, message=?, errors=?, mode=? WHERE id=?",
+        (config.now().isoformat(timespec="seconds"), status, found, requests, message[:20000],
+         errors, mode, run_id),
     )
     conn().commit()
+
+
+def run_incoming_info(run_id: int, started: str, finished: str, res: dict):
+    """Czas i wynik sprawdzania zapowiedzianych dostaw, które idzie zaraz po odczycie stanów."""
+    conn().execute(
+        "UPDATE runs SET inc_started=?, inc_finished=?, inc_requests=?, inc_checked=?, inc_errors=? WHERE id=?",
+        (started, finished, res.get("requests"), res.get("checked"), res.get("errors"), run_id),
+    )
+    conn().commit()
+
+
+def runs_since(shop_id: int, since: str | None):
+    """Pobrania od dnia `since` (RRRR-MM-DD) albo wszystkie, od najnowszego."""
+    if since:
+        return conn().execute("SELECT * FROM runs WHERE shop_id=? AND started>=? ORDER BY id DESC",
+                              (shop_id, since)).fetchall()
+    return conn().execute("SELECT * FROM runs WHERE shop_id=? ORDER BY id DESC", (shop_id,)).fetchall()
 
 
 def runs(shop_id: int, limit: int = 50):
