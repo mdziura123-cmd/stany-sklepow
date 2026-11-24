@@ -4,7 +4,7 @@ Odczyt o świcie pokazuje stan po dniu poprzednim, dlatego zmiany do dni tygodni
 przypisujemy według dnia poprzedniego odczytu (prev_day).
 """
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from statistics import median
 
 from . import config, db
@@ -583,6 +583,35 @@ def _window_key(prev_ts: str | None, ts: str | None, hours: list[int]):
     return None
 
 
+def _in_window(hh: int, w: dict) -> bool:
+    s, e = w["start"], w["end"]
+    return (s <= hh < e) if s < e else (hh >= s or hh < e)
+
+
+def _window_map(prev_ts, ts, hours, wins, pairs):
+    """(indeks okna, długość w godzinach) dla zmiany między dwoma kolejnymi odczytami o pełnych godzinach.
+
+    Okna z dawnego harmonogramu (np. 22:00–5:00 przed zmianą na 23, 8, 17) przypisujemy do obecnego okna,
+    z którym najbardziej się pokrywają – po zmianie godzin stare dane nie znikają ze statystyki."""
+    k = _window_key(prev_ts, ts, hours)
+    if k is not None:
+        return k, wins[k]["hours"]
+    if not prev_ts or not ts or (prev_ts, ts) not in pairs or ts[14:16] != "00" or prev_ts[14:16] != "00":
+        return None
+    a, b = datetime.strptime(prev_ts, "%Y-%m-%d %H:%M"), datetime.strptime(ts, "%Y-%m-%d %H:%M")
+    length = int((b - a).total_seconds() // 3600)
+    if not 0 < length <= 24:
+        return None
+    overlap = [0] * len(wins)
+    for i in range(length):
+        hh = (a + timedelta(hours=i)).hour
+        for j, w in enumerate(wins):
+            if _in_window(hh, w):
+                overlap[j] += 1
+    best = max(range(len(wins)), key=lambda j: overlap[j])
+    return (best, length) if overlap[best] else None
+
+
 def day_parts(shop: dict, period: str = "30") -> dict:
     """Sprzedaż i aktywność w oknach między godzinami pobierania."""
     sid = shop["id"]
@@ -595,22 +624,29 @@ def day_parts(shop: dict, period: str = "30") -> dict:
     readings = [t for t in db.readings(sid) if rg.start <= t[:10] <= rg.end]
     all_readings = db.readings(sid)
     # ile pełnych wystąpień każdego okna (dwa kolejne zaplanowane odczyty)
+    pairs = set(zip(all_readings, all_readings[1:]))
     occ = [0] * len(wins)
+    occ_h = [0] * len(wins)                       # suma godzin wszystkich wystąpień okna
     occ_wd = [[0] * len(wins) for _ in range(7)]
+    occ_wd_h = [[0] * len(wins) for _ in range(7)]
     for a, b in zip(all_readings, all_readings[1:]):
         if not (rg.start <= b[:10] <= rg.end):
             continue
-        k = _window_key(a, b, hours)
-        if k is not None:
+        m = _window_map(a, b, hours, wins, pairs)
+        if m is not None:
+            k, ln = m
             occ[k] += 1
+            occ_h[k] += ln
             occ_wd[_d(a[:10]).weekday()][k] += 1
+            occ_wd_h[_d(a[:10]).weekday()][k] += ln
     rows = changes(sid, rg.start, rg.end, ("sale",))
     agg = [{"sold": 0.0, "value": 0.0, "tx": 0, "products": set(), "top": {}} for _ in wins]
     grid = [[0.0] * len(wins) for _ in range(7)]
     for r in rows:
-        k = _window_key(r["prev_ts"], r["ts"], hours)
-        if k is None:
+        m = _window_map(r["prev_ts"], r["ts"], hours, wins, pairs)
+        if m is None:
             continue
+        k = m[0]
         q, v = -r["delta"], -r["delta"] * _price(r)
         a = agg[k]
         a["sold"] += q
@@ -624,11 +660,11 @@ def day_parts(shop: dict, period: str = "30") -> dict:
         grid[_d(r["prev_ts"][:10]).weekday()][k] += v
     total_value = sum(a["value"] for a in agg) or 1
     res = []
-    for w, a, n in zip(wins, agg, occ):
-        per_h = a["value"] / (n * w["hours"]) if n else 0
+    for w, a, n, nh in zip(wins, agg, occ, occ_h):
+        per_h = a["value"] / nh if nh else 0
         res.append(w | {"occurrences": n, "sold": a["sold"], "value": a["value"], "tx": a["tx"],
                         "products": len(a["products"]), "share": 100.0 * a["value"] / total_value,
-                        "value_per_hour": per_h, "tx_per_hour": a["tx"] / (n * w["hours"]) if n else 0,
+                        "value_per_hour": per_h, "tx_per_hour": a["tx"] / nh if nh else 0,
                         "per_window": a["value"] / n if n else 0,
                         "top": sorted(a["top"].values(), key=lambda x: -x["value"])[:6]})
     best = max(res, key=lambda x: x["value_per_hour"]) if any(x["occurrences"] for x in res) else None
@@ -638,7 +674,7 @@ def day_parts(shop: dict, period: str = "30") -> dict:
         row = []
         for k, w in enumerate(wins):
             n = occ_wd[d][k]
-            vph = grid[d][k] / (n * w["hours"]) if n else None
+            vph = grid[d][k] / occ_wd_h[d][k] if occ_wd_h[d][k] else None
             mx = max(mx, vph or 0)
             row.append({"value": grid[d][k], "n": n, "vph": vph})
         cells.append({"name": WEEKDAYS[d], "full": WEEKDAYS_FULL[d], "cells": row})

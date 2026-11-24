@@ -187,6 +187,22 @@ a wszystkie próby z czasem, statusem i logiem widać w zakładce **Diagnostyka*
 Każde pobranie to pełny przegląd sklepu. Przy 7 godzinach dziennie to 7 razy więcej zapytań niż
 przy jednej – dla dużych sklepów (jak Ringsen, ok. 400 zapytań na pobranie) wybierz rozsądną liczbę godzin.
 
+## Dane historyczne
+
+Aplikacja niczego nie kasuje sama:
+
+- baza leży poza kontenerem (`/DATA/AppData/stany-sklepow`), więc aktualizacje przez Watchtower
+  ani reinstalacja w CasaOS jej nie ruszają;
+- przed każdą zmianą struktury bazy (migracją) powstaje kopia `przed-migracja-vN-….db` w folderze kopii;
+- migracje tylko dopisują kolumny i uzupełniają brakujące wartości – nie przeliczają ani nie usuwają
+  zapisanych zmian;
+- po zmianie godzin pobierania stare odczyty zostają we wszystkich zakładkach: „Pora dnia” przypisuje okna
+  z dawnego harmonogramu do najbliższego obecnego okna, „Diagnostyka” pokazuje dawne godziny osobno
+  i nie liczy dni sprzed zmiany jako brakujących, a „Analiza konkurencji” nie zależy od harmonogramu.
+
+Usuwane są tylko: najstarsze codzienne kopie zapasowe ponad ustawioną liczbę (Ustawienia → Kopie zapasowe)
+oraz dane sklepu, który sam usuniesz.
+
 ## Dobre obyczaje
 
 Aplikacja przedstawia się jako `stany-sklepow`, robi przerwę między zapytaniami (domyślnie 3 s,

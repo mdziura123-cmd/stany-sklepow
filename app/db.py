@@ -159,8 +159,31 @@ def db_path() -> str:
     return os.path.join(config.DATA_DIR, "stany.db")
 
 
+def _backup_before_migration(target: int):
+    """Kopia bazy przed migracją – stare dane zawsze można odzyskać."""
+    c = conn()
+    has_data = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='readings'").fetchone()
+    if not has_data or not c.execute("SELECT 1 FROM readings LIMIT 1").fetchone():
+        return
+    try:
+        os.makedirs(config.BACKUP_DIR, exist_ok=True)
+        fn = os.path.join(config.BACKUP_DIR, f"przed-migracja-v{target}-{config.now():%Y-%m-%d_%H%M}.db")
+        dst = sqlite3.connect(fn)
+        with dst:
+            c.backup(dst)
+        dst.close()
+        log.info("Kopia przed migracją: %s", fn)
+    except Exception:  # noqa: BLE001
+        log.exception("Nie udało się zrobić kopii przed migracją")
+
+
 def init():
     c = conn()
+    old_schema = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone() \
+        and c.execute("SELECT value FROM settings WHERE key='schema'").fetchone()
+    old_schema = int(old_schema[0]) if old_schema else None
+    if old_schema is not None and old_schema < 4:
+        _backup_before_migration(4)
     c.executescript(SCHEMA)
     added = False
     for table, columns in EXTRA_COLUMNS.items():
@@ -173,7 +196,9 @@ def init():
                     added = True
     c.execute("CREATE INDEX IF NOT EXISTS changes_shop_ts ON changes(shop_id, ts)")
     c.commit()
-    if added or c.execute("SELECT value FROM settings WHERE key='schema'").fetchone() is None:
+    # Przeliczenie zmian od zera tylko dla baz z wersji 1 (bez numeru schematu). Nigdy przy zwykłej
+    # aktualizacji – nadpisałoby to zmiany zapisane z dokładną godziną odczytu.
+    if old_schema is None and (added or c.execute("SELECT 1 FROM snapshots LIMIT 1").fetchone()):
         migrate_v2()
     if (get_setting("schema") or 0) < 4:
         migrate_v4()

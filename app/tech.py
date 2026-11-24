@@ -116,7 +116,14 @@ def coverage(shop_id: int, runs: list[dict], since: str | None, hours: list[int]
     planned = [r for r in runs if r["planned"] and r["slot_hour"] in hours]
     if not hours or not planned:
         return {"expected": 0, "done": 0, "pct": None, "missing": [], "from": None}
-    first = min(r["slot_dt"] for r in planned).date()
+    # obecny harmonogram obowiązuje od ostatniego planowego pobrania o dawnej godzinie – wcześniejszych dni
+    # nie rozliczamy z nowych godzin (stare pobrania zostają w logu i w tabeli „Według godziny”)
+    old = [r["slot_dt"] for r in runs
+           if r["planned"] and r["slot_hour"] not in hours]
+    first_dt = min(r["slot_dt"] for r in planned)
+    if old:
+        first_dt = max(first_dt, max(old) + timedelta(minutes=1))
+    first = first_dt.date()
     if since:
         first = max(first, datetime.fromisoformat(since).date())
     good_slots = {r["slot_dt"] for r in planned if r["good"]}
@@ -127,7 +134,7 @@ def coverage(shop_id: int, runs: list[dict], since: str | None, hours: list[int]
         for h in hours:
             slot = datetime(day.year, day.month, day.day, h)
             # bieżący slot liczymy dopiero po 2 godzinach – pobieranie może jeszcze trwać
-            if slot > now - timedelta(hours=2):
+            if slot > now - timedelta(hours=2) or slot < first_dt:
                 continue
             expected += 1
             if slot not in good_slots:

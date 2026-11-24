@@ -335,3 +335,4 @@ tr.muted td { color: var(--muted); }
 .heat24 .c { height: 26px; border-radius: 5px; }
 .heat24 .tot { font-size: .76rem; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
 .inline-pct { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+.trends { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
