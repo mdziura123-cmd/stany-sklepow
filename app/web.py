@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import auth, backup, charts, config, db, notify, presets, runner, stats, tech, updates
+from . import auth, backup, charts, competition, config, db, notify, presets, runner, stats, tech, updates
 from .scraper import Rules, test_shop
 
 log = logging.getLogger("web")
@@ -116,6 +116,7 @@ def render(_tpl, req=None, **ctx):
     ctx.setdefault("auth_on", auth.password_set())
     ctx.setdefault("path", urlparse(req.path).path if req else "")
     ctx.setdefault("run_hours_txt", db.run_hours_text())
+    ctx.setdefault("global_hours_txt", db.run_hours_text())
     return env.get_template(_tpl).render(**ctx)
 
 
@@ -195,8 +196,25 @@ def shop_new_post(req, q):
 
 
 def shop_ctx(shop, tab, **kw):
-    kw.update(shop=shop, tab=tab, section="shop", last=db.last_run(shop["id"]))
+    kw.update(shop=shop, tab=tab, section="shop", last=db.last_run(shop["id"]),
+              run_hours_txt=db.hours_text(db.shop_run_hours(shop)))
     return kw
+
+
+@route("GET", "/competition")
+def competition_view(req, q):
+    ids = []
+    for v in (q.get("shops") or "").split(","):
+        if v.strip().isdigit():
+            ids.append(int(v))
+    try:
+        min_pct = max(0.0, float((q.get("min_pct") or "0").replace(",", ".")))
+    except ValueError:
+        min_pct = 0.0
+    rep = competition.report(q.get("period", "7"), q.get("from", ""), q.get("to", ""), ids,
+                             only_watched=q.get("watched") == "1", metric=q.get("metric", "all"), min_pct=min_pct)
+    return render("competition.html", req, section="competition", r=rep, PERIODS=competition.PERIODS,
+                  METRICS=competition.METRICS, q=q)
 
 
 @route("GET", r"/shop/(\d+)")
@@ -355,6 +373,7 @@ def shop_edit_post(req, q, sid):
     old_start = cfg["start_url"]
     cfg["start_url"] = f.get("start_url", "").strip() or cfg["start_url"]
     cfg["extra_urls"] = [u.strip() for u in f.get("extra_urls", "").splitlines() if u.strip()]
+    cfg["run_hours"] = db.parse_hours(f.get("run_hours", ""))
     cfg["mode"] = f.get("mode", "auto") if f.get("mode") in ("auto", "listing", "product_pages") else "auto"
     for k in presets.EDITABLE_TEXT:
         if k in f:
@@ -394,6 +413,7 @@ def shop_preset(req, q, sid):
     cfg = presets.merged(shop["config"])
     fresh = presets.config_for(cfg["start_url"])
     fresh["extra_urls"] = cfg.get("extra_urls", [])
+    fresh["run_hours"] = cfg.get("run_hours", [])
     fresh["stats"] = cfg.get("stats", {})
     db.update_shop(shop["id"], cfg=fresh)
     raise Redirect(f"/shop/{shop['id']}/edit")
@@ -531,8 +551,16 @@ def settings_notify(req, q):
     f = req.form()
     s = notify.settings()
     for k in notify.DEFAULTS:
-        if k in ("daily", "alerts"):
+        if k in ("daily", "alerts", "comp_alerts", "comp_sold_out", "comp_back"):
             s[k] = f.get(k) == "1"
+        elif k == "comp_scope":
+            s[k] = "all" if f.get(k) == "all" else "watched"
+        elif k in ("comp_price_pct", "comp_many"):
+            try:
+                v = float((f.get(k) or "0").replace(",", "."))
+                s[k] = max(0, int(v) if k == "comp_many" else v)
+            except ValueError:
+                pass
         elif k in ("ha_token", "smtp_password"):
             if f.get(k):  # puste pole = bez zmian
                 s[k] = f.get(k).strip()

@@ -15,6 +15,7 @@
     <a class="brand" href="/"><span class="logo">{{ icon('trend') }}</span>Stany sklepów</a>
     <nav class="nav">
       <a href="/" class="{{ 'on' if section == 'home' }}">{{ icon('home') }}Pulpit</a>
+      <a href="/competition" class="{{ 'on' if section == 'competition' }}">{{ icon('chart') }}Analiza konkurencji</a>
       <div class="side-label">Sklepy</div>
       {% for s in shops_nav %}
         <a href="/shop/{{ s.id }}" class="{{ 'on' if shop is defined and shop and shop.id == s.id and tab == 'dash' }}">{{ icon('store') }}{{ s.name }}</a>
@@ -38,7 +39,7 @@
     </nav>
     <div class="side-foot">
       Wersja {{ VERSION }}{% if GIT_SHA %} · {{ GIT_SHA }}{% endif %}<br>
-      Pobieranie: {{ run_hours_txt }}
+      Pobieranie: {{ global_hours_txt }}
       {% if upd.behind %}<a class="upd" href="/settings#aktualizacje">{{ icon('cloud') }} Nowa wersja – instalacja o {{ UPDATE_HOUR }}:00</a>{% endif %}
     </div>
   </aside>

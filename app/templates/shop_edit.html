@@ -11,8 +11,12 @@
   <h2 style="margin-bottom:14px">Sklep</h2>
   <label>Nazwa <input name="name" value="{{ shop.name }}"></label>
   <label>Link startowy (strona główna albo kategoria)<input name="start_url" type="url" value="{{ cfg.start_url }}"></label>
-  <label>Dodatkowe listy produktów – jeden link na linię
-    <textarea name="extra_urls" rows="3" placeholder="https://sklep.pl/kategoria/inna">{{ cfg.extra_urls|join("\n") }}</textarea></label>
+  <label>Dodatkowe kategorie albo pojedyncze produkty – jeden link na linię
+    <textarea name="extra_urls" rows="3" placeholder="https://sklep.pl/kategoria/inna&#10;https://sklep.pl/produkt/konkretny">{{ cfg.extra_urls|join("\n") }}</textarea></label>
+  <p class="hint">Link pasujący do wzorca produktu jest sprawdzany jako pojedynczy produkt (jeśli nie było go na listach).</p>
+  <label>Godziny pobierania tego sklepu (oddzielone przecinkami, puste = wspólne z Ustawień: {{ global_hours_txt }})
+    <input name="run_hours" value="{{ (cfg.run_hours or [])|join(', ') }}" placeholder="np. 6, 9, 12, 15, 18, 21, 23"></label>
+  <p class="hint">Każda godzina to pełne pobranie sklepu. Pobrania sklepów idą po kolei, więc przy wielu sklepach i godzinach późniejsze zaczną się z opóźnieniem.</p>
   <label class="check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if shop.enabled }}> Pobieraj automatycznie codziennie o {{ run_hours_txt }}</label>
 
   <h2 style="margin:22px 0 14px">Statystyki</h2>

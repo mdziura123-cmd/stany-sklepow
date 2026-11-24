@@ -84,6 +84,7 @@ class Item:
     code: str = ""
     category: str = ""
     category_size: int = 10**9  # im mniejsza kategoria, tym dokładniejsza
+    available: bool | None = None  # sklep pokazuje tylko dostępność, bez liczby sztuk
 
 
 @dataclass
@@ -260,19 +261,26 @@ def _card_for(anchor, base_url: str, rules: Rules, product_url: str):
     return found
 
 
-def parse_stock(text: str, rules: Rules) -> tuple[int | None, bool]:
-    """Bierze informację, która występuje w tekście najwcześniej (ważne na stronie
-    produktu, gdzie niżej mogą być karty produktów polecanych)."""
+def parse_stock(text: str, rules: Rules) -> tuple[int | None, bool, bool | None]:
+    """Zwraca (stan, znaleziono, dostępność). Bierze informację, która występuje w tekście
+    najwcześniej (ważne na stronie produktu, gdzie niżej mogą być karty produktów polecanych).
+
+    Reguła stanu bez grupy z liczbą (np. „Dostępny|W magazynie”) oznacza sklep, który podaje tylko
+    dostępność – wtedy stan zostaje pusty, a zapisujemy samo „dostępny”. Liczby nie zgadujemy."""
     m = rules.stock.search(text)
     z = rules.zero.search(text) if rules.zero else None
     if z and (not m or z.start() < m.start()):
-        return 0, True
+        if rules.stock.groups == 0:
+            return None, True, False
+        return 0, True, False
     if m:
+        if rules.stock.groups == 0:
+            return None, True, True
         num = to_float(first_group(m))
         if num is None:
-            return None, False
-        return (int(num) if num.is_integer() else num), True
-    return None, False
+            return None, False, None
+        return (int(num) if num.is_integer() else num), True, num > 0
+    return None, False, None
 
 
 def parse_listing(html: str, base_url: str, rules: Rules) -> Page:
@@ -302,7 +310,7 @@ def parse_listing(html: str, base_url: str, rules: Rules) -> Page:
         if card is None:
             continue
         text = card.get_text("\n", strip=True)
-        stock, ok = parse_stock(text, rules)
+        stock, ok, avail = parse_stock(text, rules)
         if not ok:
             continue
         names = [_anchor_text(a) for a in anchors]
@@ -314,7 +322,7 @@ def parse_listing(html: str, base_url: str, rules: Rules) -> Page:
         code = first_group(rules.code.search(text)) if rules.code else None
         price = to_float(first_group(rules.price.search(text))) if rules.price else None
         items.append(Item(key=urlparse(u).path, name=name[:300], url=u, stock=stock,
-                          price=price, code=code or ""))
+                          price=price, code=code or "", available=avail))
 
     page_text = soup.get_text(" ", strip=True)
     total = to_int(first_group(rules.total.search(page_text))) if rules.total else None
@@ -335,7 +343,7 @@ def parse_product_page(html: str, url: str, rules: Rules) -> Item | None:
     # stan szukamy od nagłówka produktu, żeby nie złapać produktów polecanych
     start = text.find(name) if name else -1
     part = text[start:] if start >= 0 else text
-    stock, ok = parse_stock(part[:4000], rules)
+    stock, ok, avail = parse_stock(part[:4000], rules)
     if not ok:
         return None
     code = first_group(rules.code.search(part)) if rules.code else None
@@ -351,7 +359,7 @@ def parse_product_page(html: str, url: str, rules: Rules) -> Item | None:
             category = crumbs[-2].get_text(" ", strip=True)
     cu = clean_url(url)
     return Item(key=urlparse(cu).path, name=name[:300] or slug_label(cu), url=cu, stock=stock,
-                price=price, code=code or "", category=category)
+                price=price, code=code or "", category=category, available=avail)
 
 
 # ---------------------------------------------------------------- przeszukiwanie
@@ -377,6 +385,7 @@ class Crawler:
         self.report = Report()
         self.detected = dict(cfg.get("detected") or {})
         self.max_pages = int(cfg.get("max_pages") or 300)
+        self.product_urls: list[str] = []
 
     # --- źródła (kategorie)
     def discover_sources(self) -> list[tuple[str, str]]:
@@ -398,7 +407,10 @@ class Crawler:
             sources.extend((u, t or slug_label(u)) for u, t in cats)
             if not sources:
                 sources.append((start, page.title or slug_label(start)))
+        self.product_urls = [u for u in extra if self.rules.is_product(clean_url(u))]
         for u in extra:
+            if u in self.product_urls:
+                continue
             sources.append((u, page.links.get(clean_url(u)) or slug_label(u)))
         seen, out = set(), []
         for u, t in sources:
@@ -498,7 +510,7 @@ class Crawler:
                 it.category, it.category_size = label, size
                 items[key] = it
             else:  # zaktualizuj stan, zostaw dokładniejszą kategorię
-                prev.stock, prev.price = it.stock, it.price or prev.price
+                prev.stock, prev.price, prev.available = it.stock, it.price or prev.price, it.available
         info["found"] = len(found)
         if first.total and len(found) < 0.9 * first.total:
             info["incomplete"] = True
@@ -554,8 +566,24 @@ class Crawler:
             items[it.key] = it
         return True
 
+    def crawl_single_products(self, items: dict[str, Item]):
+        """Pojedyncze produkty podane w ustawieniach sklepu, których nie było na listach."""
+        todo = [u for u in self.product_urls if urlparse(clean_url(u)).path not in items]
+        for u in todo:
+            html = self.fetcher.get(u)
+            it = parse_product_page(html, u, self.rules) if html else None
+            if it:
+                items[it.key] = it
+        if todo:
+            self.report.note(f"Pojedyncze produkty z ustawień: {len(todo)} sprawdzonych")
+
     # --- całość
     def run(self) -> dict[str, Item]:
+        items = self._run()
+        self.crawl_single_products(items)
+        return items
+
+    def _run(self) -> dict[str, Item]:
         items: dict[str, Item] = {}
         mode = self.cfg.get("mode", "auto")
         use_pages = mode == "product_pages" or (mode == "auto" and self.detected.get("mode") == "product_pages")

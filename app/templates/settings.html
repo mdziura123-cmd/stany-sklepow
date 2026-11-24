@@ -13,6 +13,20 @@
     Aktywne kanały: <b>{{ channels|join(', ') if channels else 'brak' }}</b>.</p>
   <label class="check"><input type="checkbox" name="daily" value="1" {{ 'checked' if n.daily }}> Poranne podsumowanie (sprzedaż, dostawy, top produkty, alerty)</label>
   <label class="check"><input type="checkbox" name="alerts" value="1" {{ 'checked' if n.alerts }}> Tylko alerty, gdy podsumowanie jest wyłączone (obserwowane produkty, duże zamówienia)</label>
+  <h3 style="margin:16px 0 8px">Zmiany w ofercie (po każdym odczycie)</h3>
+  <label class="check"><input type="checkbox" name="comp_alerts" value="1" {{ 'checked' if n.comp_alerts }}> Wysyłaj alerty o zmianach w ofercie sklepów</label>
+  <div class="row">
+    <label>Których produktów dotyczą
+      <select name="comp_scope">
+        <option value="watched" {{ 'selected' if n.comp_scope != 'all' }}>tylko obserwowanych</option>
+        <option value="all" {{ 'selected' if n.comp_scope == 'all' }}>wszystkich</option>
+      </select></label>
+    <label>Duża zmiana ceny od (%)<input name="comp_price_pct" inputmode="decimal" value="{{ n.comp_price_pct }}" placeholder="10"></label>
+    <label>Dużo zmian w jednym odczycie od<input name="comp_many" inputmode="numeric" value="{{ n.comp_many }}" placeholder="300"></label>
+  </div>
+  <label class="check"><input type="checkbox" name="comp_sold_out" value="1" {{ 'checked' if n.comp_sold_out }}> Wyprzedanie produktu</label>
+  <label class="check"><input type="checkbox" name="comp_back" value="1" {{ 'checked' if n.comp_back }}> Powrót produktu do sprzedaży</label>
+  <p class="hint">Próg „dużo zmian” dotyczy całego sklepu, niezależnie od wyboru produktów. 0 wyłącza dany alert.</p>
 
   <h3 style="margin-top:18px">Home Assistant</h3>
   <label>Adres Home Assistant<input name="ha_url" value="{{ n.ha_url }}" placeholder="http://192.168.1.10:8123"></label>

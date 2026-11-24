@@ -23,7 +23,7 @@
         <tbody>
         {% for it in res.products %}
           <tr><td><a class="name" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.name }}</a></td><td class="small hide-m">{{ it.code }}</td>
-            <td class="r"><b>{{ it.stock|num }}</b></td><td class="r">{{ it.price|money if it.price is not none else '–' }}</td></tr>
+            <td class="r"><b>{% if it.stock is not none %}{{ it.stock|num }}{% elif it.available %}dostępny{% else %}brak{% endif %}</b></td><td class="r">{{ it.price|money if it.price is not none else '–' }}</td></tr>
         {% endfor %}
         </tbody>
       </table>

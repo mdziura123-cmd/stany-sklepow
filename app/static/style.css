@@ -4,7 +4,7 @@
   --bg: #f4f4f2; --surface: #ffffff; --surface-2: #f9f9f8; --line: #e6e5e1; --line-2: #d9d8d3;
   --text: #121211; --text-2: #52514e; --muted: #8a8983;
   --accent: #2a78d6; --accent-ink: #ffffff; --accent-soft: #e8f1fc;
-  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #8a56d6; --series-5: #c7930a;
   --good: #0a8f0a; --warn: #b77900; --bad: #d03b3b;
   --good-soft: #e6f5e6; --warn-soft: #fdf3dc; --bad-soft: #fbe9e9;
   --radius: 14px; --radius-s: 9px;
@@ -18,7 +18,7 @@
     --bg: #111110; --surface: #1a1a19; --surface-2: #20201f; --line: #2c2c2a; --line-2: #3a3a37;
     --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
     --accent: #3987e5; --accent-soft: #1c2a3d;
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #a07ae8; --series-5: #d9a520;
     --good: #2fbf2f; --warn: #fab219; --bad: #ec6767;
     --good-soft: #15291a; --warn-soft: #2e2611; --bad-soft: #321a1a;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3);
@@ -319,3 +319,19 @@ table.kv th { text-align: left; font-weight: 550; color: var(--text-2); width: 2
 table.kv td { padding: 6px 0; word-break: break-all; }
 tr.muted td { color: var(--muted); }
 .card-head .hint .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 3px 0 10px; }
+
+/* analiza konkurencji */
+.comp-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 18px; }
+.comp-filters label { margin: 0; font-size: .82rem; }
+.comp-filters label input, .comp-filters label select { margin: 4px 0 0; }
+.comp-filters label.check { align-self: center; }
+.comp-filters .btn { margin-left: auto; }
+.seg.small a { padding: 3px 9px; font-size: .78rem; }
+.insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.insight { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.insight .lab { font-size: .8rem; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.insight .val { font-size: 1.15rem; font-weight: 650; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.heat24 { grid-template-columns: 38px repeat(24, minmax(16px, 1fr)) 52px; min-width: 640px; gap: 3px; }
+.heat24 .c { height: 26px; border-radius: 5px; }
+.heat24 .tot { font-size: .76rem; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
+.inline-pct { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }

@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, kpi, empty, delta %}
+{% block title %}Analiza konkurencji{% endblock %}
+
+{% macro prod(r, pid) -%}
+<a class="name" href="/shop/{{ r.shop_id }}/product/{{ pid }}">{{ r.name }}</a>
+<div class="meta">{{ r.shop_name }}{% if r.category %} · {{ r.category }}{% endif %}</div>
+{%- endmacro %}
+
+{% macro when(r) -%}
+<span class="nowrap mono">{% if r.prev_ts %}{{ r.prev_ts[5:16]|replace('-', '.') }} → {% endif %}{{ (r.tsx or r.ts or r.first_ts)[5:16]|replace('-', '.') }}</span>
+{%- endmacro %}
+
+{% macro avail_cell(stock, av) -%}
+{%- if stock is not none %}{{ stock|num }}{% elif av == 1 %}dostępny{% elif av == 0 %}brak{% else %}–{% endif -%}
+{%- endmacro %}
+
+{% block content %}
+{% set per = r.per %}
+{% set base = '/competition?period=' ~ per.period ~ ('&from=' ~ per.d_from ~ '&to=' ~ per.d_to if per.period == 'custom' else '') ~ ('&shops=' ~ q.shops if q.shops else '') ~ ('&watched=1' if r.only_watched else '') %}
+<div class="page-head">
+  <div>
+    <h1>Analiza konkurencji</h1>
+    <p class="muted">Zmiany w ofercie obserwowanych sklepów · {{ per.label }}</p>
+  </div>
+</div>
+
+<form method="get" action="/competition" class="card pad form comp-filters">
+  <div class="seg">
+  {% for k, lab in PERIODS.items() if k != 'custom' %}<a href="?period={{ k }}{{ '&shops=' ~ q.shops if q.shops }}{{ '&watched=1' if r.only_watched }}" class="{{ 'on' if per.period == k }}">{{ lab }}</a>{% endfor %}
+  </div>
+  <input type="hidden" name="period" value="custom">
+  <label>Od <input type="date" name="from" value="{{ per.d_from }}"></label>
+  <label>Do <input type="date" name="to" value="{{ per.d_to }}"></label>
+  <label>Sklep
+    <select name="shops">
+      <option value="">wszystkie</option>
+      {% for s in r.shops %}<option value="{{ s.id }}" {{ 'selected' if q.shops == s.id|string }}>{{ s.name }}</option>{% endfor %}
+    </select></label>
+  <label class="check"><input type="checkbox" name="watched" value="1" {{ 'checked' if r.only_watched }}> tylko obserwowane produkty</label>
+  <button class="btn">{{ icon('search') }}Pokaż</button>
+</form>
+
+{% if r.empty or not r.shops %}
+<div class="card">{{ empty('Nie obserwujesz jeszcze żadnego sklepu', 'Dodaj sklep konkurencji przyciskiem „Dodaj sklep” w menu.', 'store') }}</div>
+{% else %}
+{% set t = r.t %}
+<div class="kpis">
+  {{ kpi('Monitorowane sklepy', r.n_shops|string, foot=(r.n_enabled ~ ' z automatycznym pobieraniem'), dotvar='--series-1') }}
+  {{ kpi('Produkty w ofercie', r.n_products|num, foot=(r.n_watched|num ~ ' obserwowanych')) }}
+  {{ kpi('Zmiany cen', t.price|num, foot=(t.price_up|num ~ ' w górę · ' ~ t.price_down|num ~ ' w dół')) }}
+  {{ kpi('Wyprzedane', t.sold_out|num, foot=('wróciło do sprzedaży: ' ~ t.back|num)) }}
+  {{ kpi('Nowe / usunięte', t.new|num ~ ' / ' ~ t.removed|num, foot=('wróciło do oferty: ' ~ t.relisted|num)) }}
+  {{ kpi('Odczyty w okresie', r.n_readings|num, foot=('zmian łącznie: ' ~ t.n|num)) }}
+</div>
+
+{% if not r.has_data %}
+<div class="card">{{ empty('Brak wykrytych zmian w tym okresie', 'Zmiany pojawią się po co najmniej dwóch odczytach sklepu. Spróbuj dłuższego okresu.', 'clock') }}</div>
+{% else %}
+
+<div class="alert">{{ icon('alert') }}<div>Zmianę widać dopiero w odczycie, a nastąpiła gdzieś <b>między poprzednim a bieżącym odczytem</b>. Wykresy godzinowe rozkładają ją równo na godziny tego okna, więc pokazują <b>szacunkową aktywność</b>, a nie dokładny czas sprzedaży czy dostawy. Spadek stanu nie musi oznaczać sprzedaży (np. rezerwacja, korekta, przesunięcie towaru).{% if r.skipped %} Pominięto {{ r.skipped|num }} zmian bez znanego okna (pierwszy odczyt albo przerwa dłuższa niż 36 h).{% endif %}</div></div>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('zap') }} Kiedy konkurencja jest najbardziej aktywna</h2></div>
+  <div class="card-body">
+    <div class="insights">
+    {% for i in r.insights %}
+      <div class="insight">
+        <div class="lab"><span class="dot" style="background:var({{ i.var }})"></span>{{ i.name }}</div>
+        {% if i.hours %}
+        <div class="val">{{ i.hours[0].label }} <span class="small muted">· {{ '%.0f'|format(i.hours[0].share) }}%</span></div>
+        <div class="small muted">{% if i.hours|length > 1 %}potem {{ i.hours[1].label }} ({{ '%.0f'|format(i.hours[1].share) }}%) · {% endif %}dni: {{ i.days|map(attribute='label')|join(', ') }}</div>
+        {% else %}<div class="val muted">brak danych</div>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Aktywność godzinowa (szacunek)</h2><span class="hint">liczba zmian rozłożona na godziny</span></div>
+  <div class="card-body">
+    {{ charts.line_chart(r.hourly.labels, r.hourly.series, height=260) }}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ icon('calendar') }} Mapa aktywności</h2>
+    <div class="seg small">
+    {% for k, lab in METRICS.items() %}<a href="{{ base }}&metric={{ k }}" class="{{ 'on' if r.metric == k }}">{{ lab }}</a>{% endfor %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="tbl-wrap">
+    <div class="heat heat24">
+      <div></div>{% for h in r.heat.hours %}<div class="hd">{{ h }}</div>{% endfor %}<div class="hd">razem</div>
+      {% for row in r.heat.rows %}
+        <div class="wd">{{ row.name }}</div>
+        {% for c in row.cells %}
+          <div class="c {{ 'h' ~ c.lvl if c.lvl }}" title="{{ row.full }}, {{ loop.index0 }}:00–{{ loop.index0 + 1 }}:00 · ok. {{ '%.1f'|format(c.v)|replace('.', ',') }} zmian"></div>
+        {% endfor %}
+        <div class="tot">{{ '%.0f'|format(row.total) }}</div>
+      {% endfor %}
+    </div>
+    </div>
+    <p class="hint">Im ciemniej, tym więcej wykrytych zmian ({{ METRICS[r.metric] }}) przypada szacunkowo na daną godzinę. Najedź na pole, żeby zobaczyć wartość.</p>
+  </div>
+</section>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>Aktywność według dni tygodnia</h2><span class="hint">{{ METRICS[r.metric] }}</span></div>
+    <div class="card-body">{{ charts.bar_chart(r.weekday_chart, height=220) }}</div>
+  </section>
+  {% if r.hist %}
+  <section class="card">
+    <div class="card-head"><h2>Historia zmian cen</h2></div>
+    <div class="card-body">{{ charts.line_chart(r.hist.labels, r.hist.price, height=220) }}</div>
+  </section>
+  {% endif %}
+</div>
+
+{% if r.hist %}
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>Historia zmian stanów</h2></div>
+    <div class="card-body">
+      {{ charts.line_chart(r.hist.labels, r.hist.stock, height=220, unit=' szt.') }}
+      <p class="hint">Suma spadków i wzrostów stanów z odczytów danego dnia (tylko sklepy podające liczbę sztuk).</p>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Historia dostępności</h2></div>
+    <div class="card-body">{{ charts.line_chart(r.hist.labels, r.hist.avail, height=220) }}</div>
+  </section>
+</div>
+{% endif %}
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('store') }} Porównanie sklepów</h2></div>
+  <div class="card-body flush tbl-wrap">
+  <table>
+    <thead><tr><th>Sklep</th><th class="r">Produkty</th><th class="r">Odczyty</th><th class="r">Zmiany cen</th>
+      <th class="r">Wyprzedane / wróciły</th><th class="r hide-m">Nowe / usunięte</th><th class="r hide-m">Spadki / wzrosty stanów</th><th class="r">Zmian / odczyt</th></tr></thead>
+    <tbody>
+    {% for s in r.compare %}
+      <tr>
+        <td><a class="name" href="/shop/{{ s.id }}">{{ s.name }}</a>{% if s.avail_only %}<div class="meta">tylko dostępność</div>{% endif %}</td>
+        <td class="r">{{ s.products|num }}</td>
+        <td class="r">{{ s.readings }}</td>
+        <td class="r nowrap">{{ s.price|num }} <span class="small muted">↑{{ s.price_up }} ↓{{ s.price_down }}</span>
+          {% if s.price_avg_pct is not none %}<div class="meta">średnio {{ '%.1f'|format(s.price_avg_pct)|replace('.', ',') }}%</div>{% endif %}</td>
+        <td class="r">{{ s.sold_out|num }} / {{ s.back|num }}</td>
+        <td class="r hide-m">{{ s.new|num }} / {{ s.removed|num }}</td>
+        <td class="r hide-m">{% if s.avail_only %}–{% else %}{{ s.down_units|num }} / {{ s.up_units|num }}{% endif %}</td>
+        <td class="r"><b>{{ s.per_reading|num if s.per_reading is not none else '–' }}</b></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('tag') }} Zmiany cen</h2>
+    <form method="get" action="/competition" class="actions">
+      {% for k in ('period', 'from', 'to', 'shops', 'watched', 'metric') if q[k] %}<input type="hidden" name="{{ k }}" value="{{ q[k] }}">{% endfor %}
+      <label class="small inline-pct">od <input name="min_pct" value="{{ r.min_pct|num if r.min_pct else '' }}" placeholder="0" style="width:60px;margin:0" inputmode="decimal"> %</label>
+      <input type="search" placeholder="Filtruj…" data-filter="#t-prices" style="width:160px;margin:0">
+    </form></div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not r.prices %}{{ empty('Bez zmian cen', '', 'tag') }}{% else %}
+    <table id="t-prices">
+      <thead><tr><th>Produkt</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead>
+      <tbody>
+      {% for x in r.prices %}
+        <tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td>
+          <td class="r muted">{{ x.prev_price|money }}</td><td class="r"><b>{{ x.price|money }}</b></td><td class="r">{{ delta(x.pct, true) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('x') }} Zniknęły ze sprzedaży</h2><span class="hint">wyprzedane w okresie</span></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.sold_out %}{{ empty('Nic się nie wyprzedało', '', 'check') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Było</th></tr></thead><tbody>
+      {% for x in r.sold_out %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.prev_stock, x.prev_avail) }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('refresh') }} Ponownie dostępne</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.back %}{{ empty('Brak powrotów', '', 'box') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Jest</th></tr></thead><tbody>
+      {% for x in r.back %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.stock, x.avail) }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('plus') }} Nowe produkty</h2></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.new %}{{ empty('Brak nowych produktów', '', 'box') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Pierwszy odczyt</th><th class="r">Cena</th></tr></thead><tbody>
+      {% for x in r.new %}<tr><td>{{ prod(x, x.id) }}</td><td class="nowrap mono">{{ x.first_ts[5:16]|replace('-', '.') }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('x') }} Usunięte z oferty</h2><span class="hint">tylko po pełnych odczytach</span></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.removed %}{{ empty('Nic nie zniknęło z oferty', '', 'check') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Ostatnio</th></tr></thead><tbody>
+      {% for x in r.removed %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head"><h2>{{ icon('box') }} Największe zmiany stanów</h2><span class="hint">50 największych w okresie</span></div>
+  <div class="card-body flush tbl-wrap tall">
+    {% if not r.stock_changes %}{{ empty('Brak zmian stanów', 'Sklepy podające tylko dostępność nie mają liczbowych stanów.', 'box') }}{% else %}
+    <table><thead><tr><th>Produkt</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead><tbody>
+    {% for x in r.stock_changes %}
+      <tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r muted">{{ x.prev_stock|num }}</td><td class="r"><b>{{ x.stock|num }}</b></td>
+        <td class="r"><span class="delta {{ 'up' if x.delta > 0 else 'down' }}">{{ '+' if x.delta > 0 }}{{ x.delta|num }}</span></td></tr>
+    {% endfor %}
+    </tbody></table>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

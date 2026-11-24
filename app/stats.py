@@ -586,7 +586,7 @@ def _window_key(prev_ts: str | None, ts: str | None, hours: list[int]):
 def day_parts(shop: dict, period: str = "30") -> dict:
     """Sprzedaż i aktywność w oknach między godzinami pobierania."""
     sid = shop["id"]
-    hours = db.run_hours()
+    hours = db.shop_run_hours(shop)
     wins = windows_for(hours)
     rg = Range(sid, period)
     out = {"range": rg, "enough": False, "windows": wins, "hours": hours}

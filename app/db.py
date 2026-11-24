@@ -115,6 +115,15 @@ CREATE TABLE IF NOT EXISTS announcements (
 );
 CREATE INDEX IF NOT EXISTS announcements_shop ON announcements(shop_id, status, date);
 CREATE INDEX IF NOT EXISTS announcements_product ON announcements(product_id);
+CREATE TABLE IF NOT EXISTS offer_events (
+    id INTEGER PRIMARY KEY,
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL,             -- odczyt, w którym to zauważono
+    prev_ts TEXT,                 -- poprzedni odczyt (zmiana nastąpiła między nimi)
+    kind TEXT NOT NULL            -- removed / relisted
+);
+CREATE INDEX IF NOT EXISTS offer_events_shop_ts ON offer_events(shop_id, ts);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -125,8 +134,9 @@ EXTRA_COLUMNS = {
     "products": {"cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
                  "cur_ts": "TEXT", "first_ts": "TEXT",
                  "inc_checked": "TEXT", "inc_next_date": "TEXT", "inc_next_qty": "REAL", "inc_order_qty": "REAL",
-                 "inc_order_days": "TEXT", "inc_json": "TEXT"},
-    "changes": {"ts": "TEXT", "prev_ts": "TEXT"},
+                 "inc_order_days": "TEXT", "inc_json": "TEXT", "cur_avail": "INTEGER", "gone_ts": "TEXT"},
+    "changes": {"ts": "TEXT", "prev_ts": "TEXT", "prev_avail": "INTEGER", "avail": "INTEGER"},
+    "snapshots": {"avail": "INTEGER"},
     "runs": {"ts": "TEXT", "errors": "INTEGER", "mode": "TEXT",
              "inc_started": "TEXT", "inc_finished": "TEXT", "inc_requests": "INTEGER",
              "inc_checked": "INTEGER", "inc_errors": "INTEGER"},
@@ -158,15 +168,32 @@ def init():
         for name, typ in columns.items():
             if name not in cols:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
-                if table == "products" and name not in ("cur_ts", "first_ts") and not name.startswith("inc_"):
+                if table == "products" and name not in ("cur_ts", "first_ts", "cur_avail", "gone_ts") \
+                        and not name.startswith("inc_"):
                     added = True
     c.execute("CREATE INDEX IF NOT EXISTS changes_shop_ts ON changes(shop_id, ts)")
     c.commit()
     if added or c.execute("SELECT value FROM settings WHERE key='schema'").fetchone() is None:
         migrate_v2()
-    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '3')")
+    if (get_setting("schema") or 0) < 4:
+        migrate_v4()
+    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '4')")
     c.commit()
     _migrate_run_hours()
+
+
+def migrate_v4():
+    """Dostępność (jest / brak) obok liczbowego stanu – uzupełnienie dla istniejących danych."""
+    c = conn()
+    with c:
+        c.execute("UPDATE changes SET avail = CASE WHEN stock > 0 THEN 1 ELSE 0 END "
+                  "WHERE avail IS NULL AND stock IS NOT NULL")
+        c.execute("UPDATE changes SET prev_avail = CASE WHEN prev_stock > 0 THEN 1 ELSE 0 END "
+                  "WHERE prev_avail IS NULL AND prev_stock IS NOT NULL")
+        c.execute("UPDATE products SET cur_avail = CASE WHEN cur_stock > 0 THEN 1 ELSE 0 END "
+                  "WHERE cur_avail IS NULL AND cur_stock IS NOT NULL")
+        c.execute("UPDATE snapshots SET avail = CASE WHEN stock > 0 THEN 1 ELSE 0 END "
+                  "WHERE avail IS NULL AND stock IS NOT NULL")
 
 
 def _migrate_run_hours():
@@ -395,15 +422,15 @@ def _rollback_reading(c, shop_id: int, ts: str):
                    SELECT a.id FROM changes a JOIN changes b ON b.product_id = a.product_id AND b.prev_ts = a.ts
                    WHERE b.shop_id=? AND b.ts=?)""", (shop_id, ts))
     affected = []
-    for r in c.execute("SELECT product_id, prev_stock, prev_price, prev_ts, prev_day FROM changes "
+    for r in c.execute("SELECT product_id, prev_stock, prev_price, prev_ts, prev_day, prev_avail FROM changes "
                        "WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchall():
-        c.execute("UPDATE products SET cur_stock=?, cur_price=?, cur_ts=?, cur_day=? WHERE id=?",
-                  (r["prev_stock"], r["prev_price"], r["prev_ts"], r["prev_day"], r["product_id"]))
+        c.execute("UPDATE products SET cur_stock=?, cur_price=?, cur_ts=?, cur_day=?, cur_avail=? WHERE id=?",
+                  (r["prev_stock"], r["prev_price"], r["prev_ts"], r["prev_day"], r["prev_avail"], r["product_id"]))
         affected.append(r["product_id"])
     c.execute("DELETE FROM changes WHERE shop_id=? AND ts=?", (shop_id, ts))
     # produkty, które pojawiły się dopiero w cofanym odczycie
     new_ids = [r[0] for r in c.execute("SELECT id FROM products WHERE shop_id=? AND first_ts=?", (shop_id, ts))]
-    c.execute("UPDATE products SET cur_stock=NULL, cur_price=NULL, cur_ts=NULL, cur_day=NULL "
+    c.execute("UPDATE products SET cur_stock=NULL, cur_price=NULL, cur_ts=NULL, cur_day=NULL, cur_avail=NULL "
               "WHERE shop_id=? AND first_ts=?", (shop_id, ts))
     # niezmienione produkty wracają do poprzedniego odczytu
     prev = c.execute("SELECT MAX(ts) FROM readings WHERE shop_id=? AND ts<?", (shop_id, ts)).fetchone()[0]
@@ -411,69 +438,109 @@ def _rollback_reading(c, shop_id: int, ts: str):
     day = ts[:10]
     for pid in affected + new_ids:
         c.execute("DELETE FROM snapshots WHERE product_id=? AND day=?", (pid, day))
-        c.execute("""INSERT INTO snapshots(product_id, day, stock, price)
-                     SELECT id, cur_day, cur_stock, cur_price FROM products WHERE id=? AND cur_day=?""",
+        c.execute("""INSERT INTO snapshots(product_id, day, stock, price, avail)
+                     SELECT id, cur_day, cur_stock, cur_price, cur_avail FROM products WHERE id=? AND cur_day=?""",
                   (pid, day))
         c.execute("""UPDATE products SET stock_since = COALESCE((SELECT MAX(day) FROM changes ch
                      WHERE ch.product_id = products.id AND ch.kind <> 'price'), first_seen) WHERE id=?""", (pid,))
+    for r in c.execute("SELECT product_id, kind FROM offer_events WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchall():
+        if r["kind"] == "removed":
+            c.execute("UPDATE products SET gone_ts=NULL WHERE id=?", (r["product_id"],))
+        else:
+            back = c.execute("SELECT MAX(ts) FROM offer_events WHERE product_id=? AND kind='removed' AND ts<?",
+                             (r["product_id"], ts)).fetchone()[0]
+            c.execute("UPDATE products SET gone_ts=? WHERE id=?", (back, r["product_id"]))
+    c.execute("DELETE FROM offer_events WHERE shop_id=? AND ts=?", (shop_id, ts))
     c.execute("DELETE FROM readings WHERE shop_id=? AND ts=?", (shop_id, ts))
 
 
+def _avail(stock, available):
+    """Dostępność: jawna informacja ze strony albo wynikająca ze stanu."""
+    if available is not None:
+        return 1 if available else 0
+    if stock is None:
+        return None
+    return 1 if stock > 0 else 0
+
+
 def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
-    """Zapisuje odczyt i zwraca podsumowanie zmian. ts = czas odczytu "RRRR-MM-DD GG:MM"."""
+    """Zapisuje odczyt i zwraca podsumowanie zmian. ts = czas odczytu "RRRR-MM-DD GG:MM".
+
+    Produkt bez liczbowego stanu (sklep pokazuje tylko „dostępny / niedostępny”) zapisujemy
+    ze stanem NULL i samą dostępnością – liczby nie są zgadywane."""
     c = conn()
     ts = ts or f"{day} {config.now():%H:%M}"
-    items = [it for it in items if it.stock is not None]
-    summary = {"new": 0, "changes": 0, "products": len(items)}
+    items = [it for it in items if it.stock is not None or getattr(it, "available", None) is not None]
+    summary = {"new": 0, "changes": 0, "products": len(items), "relisted": 0}
     with c:
         if c.execute("SELECT 1 FROM readings WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchone():
             _rollback_reading(c, shop_id, ts)
+        prev_reading = c.execute("SELECT MAX(ts) FROM readings WHERE shop_id=? AND ts<?", (shop_id, ts)).fetchone()[0]
         known = {r["key"]: r for r in c.execute(
-            "SELECT id, key, cur_stock, cur_price, cur_day, cur_ts FROM products WHERE shop_id=?", (shop_id,))}
+            "SELECT id, key, cur_stock, cur_price, cur_day, cur_ts, cur_avail, gone_ts FROM products WHERE shop_id=?",
+            (shop_id,))}
         for it in items:
+            av = _avail(it.stock, getattr(it, "available", None))
             old = known.get(it.key)
+            if old is not None and old["gone_ts"]:
+                c.execute("INSERT INTO offer_events(shop_id, product_id, ts, prev_ts, kind) VALUES (?,?,?,?,'relisted')",
+                          (shop_id, old["id"], ts, prev_reading))
+                c.execute("UPDATE products SET gone_ts=NULL WHERE id=?", (old["id"],))
+                summary["relisted"] += 1
             if old is None or old["cur_day"] is None:
                 if old is None:
                     pid = c.execute(
                         """INSERT INTO products(shop_id, key, name, url, code, category, first_seen, last_seen,
-                                                cur_stock, cur_price, cur_day, cur_ts, first_ts, stock_since)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                                cur_stock, cur_price, cur_day, cur_ts, first_ts, stock_since, cur_avail)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (shop_id, it.key, it.name, it.url, it.code, it.category, day, day,
-                         it.stock, it.price, day, ts, ts, day)).lastrowid
+                         it.stock, it.price, day, ts, ts, day, av)).lastrowid
                     summary["new"] += 1
                 else:
                     pid = old["id"]
                     c.execute("""UPDATE products SET name=?, url=?, last_seen=?, cur_stock=?, cur_price=?,
-                                 cur_day=?, cur_ts=?, stock_since=COALESCE(stock_since, ?) WHERE id=?""",
-                              (it.name, it.url, day, it.stock, it.price, day, ts, day, pid))
-                c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
-                          (pid, day, it.stock, it.price))
+                                 cur_day=?, cur_ts=?, cur_avail=?, stock_since=COALESCE(stock_since, ?) WHERE id=?""",
+                              (it.name, it.url, day, it.stock, it.price, day, ts, av, day, pid))
+                c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price, avail) VALUES (?,?,?,?,?)",
+                          (pid, day, it.stock, it.price, av))
                 continue
             pid = old["id"]
-            stock_changed = old["cur_stock"] is None or abs(it.stock - old["cur_stock"]) > 1e-9
+            os_, ns = old["cur_stock"], it.stock
+            stock_changed = (os_ is None) != (ns is None) or (ns is not None and abs(ns - os_) > 1e-9)
             price_changed = (it.price is not None and old["cur_price"] is not None
                              and abs(it.price - old["cur_price"]) > 0.0001)
+            old_av = old["cur_avail"] if old["cur_avail"] is not None else _avail(os_, None)
+            avail_changed = av is not None and old_av is not None and av != old_av
             c.execute(
                 """UPDATE products SET name=?, url=?, last_seen=?,
                      code=CASE WHEN ?<>'' THEN ? ELSE code END,
                      category=CASE WHEN ?<>'' THEN ? ELSE category END
                    WHERE id=?""",
                 (it.name, it.url, day, it.code, it.code, it.category, it.category, pid))
-            if not (stock_changed or price_changed):
+            if not (stock_changed or price_changed or avail_changed):
                 c.execute("UPDATE products SET cur_ts=? WHERE id=?", (ts, pid))
                 continue
-            delta = 0.0 if old["cur_stock"] is None else it.stock - old["cur_stock"]
-            kind = "sale" if delta < 0 else ("delivery" if delta > 0 else "price")
+            delta = it.stock - os_ if (ns is not None and os_ is not None) else 0.0
+            if delta < 0:
+                kind = "sale"
+            elif delta > 0:
+                kind = "delivery"
+            elif avail_changed or stock_changed:
+                kind = "availability"   # zmiana dostępności bez liczbowego stanu
+            else:
+                kind = "price"
             c.execute(
                 """INSERT INTO changes(shop_id, product_id, day, prev_day, ts, prev_ts, prev_stock, stock, delta,
-                                       price, prev_price, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (shop_id, pid, day, old["cur_day"], ts, old["cur_ts"], old["cur_stock"], it.stock, delta,
-                 it.price if it.price is not None else old["cur_price"], old["cur_price"], kind))
-            c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price) VALUES (?,?,?,?)",
-                      (pid, day, it.stock, it.price))
+                                       price, prev_price, kind, prev_avail, avail)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (shop_id, pid, day, old["cur_day"], ts, old["cur_ts"], os_, ns, delta,
+                 it.price if it.price is not None else old["cur_price"], old["cur_price"], kind, old_av, av))
+            c.execute("INSERT OR REPLACE INTO snapshots(product_id, day, stock, price, avail) VALUES (?,?,?,?,?)",
+                      (pid, day, it.stock, it.price, av))
             c.execute("""UPDATE products SET cur_stock=?, cur_price=COALESCE(?, cur_price), cur_day=?, cur_ts=?,
+                         cur_avail=COALESCE(?, cur_avail),
                          stock_since=CASE WHEN ? THEN ? ELSE stock_since END WHERE id=?""",
-                      (it.stock, it.price, day, ts, 1 if stock_changed else 0, day, pid))
+                      (it.stock, it.price, day, ts, av, 1 if (stock_changed or avail_changed) else 0, day, pid))
             summary["changes"] += 1
         value = sum((it.stock or 0) * (it.price or 0) for it in items)
         c.execute("INSERT OR REPLACE INTO readings(shop_id, ts, day, products, stock_value) VALUES (?,?,?,?,?)",
@@ -482,6 +549,32 @@ def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
                   (shop_id, day, len(items), value))
         summary["corrections"] = _mark_reversals(c, ts=ts)
     return summary
+
+
+REMOVED_MAX_SHARE = 0.3  # gdy „znika” więcej niż 30% oferty naraz, to raczej zmiana strony niż wycofanie produktów
+
+
+def mark_removed(shop_id: int, ts: str) -> dict:
+    """Po pełnym (status „ok”) odczycie: produkty obecne w poprzednim odczycie, których teraz nie ma,
+    oznaczamy jako usunięte z oferty. Wywoływać tylko dla kompletnych odczytów."""
+    c = conn()
+    prev = c.execute("SELECT MAX(ts) FROM readings WHERE shop_id=? AND ts<?", (shop_id, ts)).fetchone()[0]
+    if not prev:
+        return {"removed": 0, "skipped": False}
+    missing = [r[0] for r in c.execute(
+        "SELECT id FROM products WHERE shop_id=? AND gone_ts IS NULL AND cur_ts=?", (shop_id, prev))]
+    present = c.execute("SELECT COUNT(*) FROM products WHERE shop_id=? AND cur_ts=?", (shop_id, ts)).fetchone()[0]
+    if not missing:
+        return {"removed": 0, "skipped": False}
+    if len(missing) > max(20, REMOVED_MAX_SHARE * (present + len(missing))):
+        log.warning("Sklep %s: %d produktów zniknęło naraz – pomijam oznaczanie jako usunięte", shop_id, len(missing))
+        return {"removed": 0, "skipped": True, "missing": len(missing)}
+    with c:
+        for pid in missing:
+            c.execute("INSERT INTO offer_events(shop_id, product_id, ts, prev_ts, kind) VALUES (?,?,?,?,'removed')",
+                      (shop_id, pid, ts, prev))
+            c.execute("UPDATE products SET gone_ts=? WHERE id=?", (ts, pid))
+    return {"removed": len(missing), "skipped": False}
 
 
 def readings(shop_id: int) -> list[str]:
@@ -577,5 +670,29 @@ def run_hours() -> list[int]:
     return sorted({int(h) for h in hrs if 0 <= int(h) <= 23})
 
 
+def parse_hours(text) -> list[int]:
+    """„6, 9,12” → [6, 9, 12]; błędne wpisy pomija."""
+    if isinstance(text, (list, tuple)):
+        vals = text
+    else:
+        vals = str(text or "").replace(";", ",").replace(" ", ",").split(",")
+    out = set()
+    for v in vals:
+        v = str(v).strip().split(":")[0]
+        if v.isdigit() and 0 <= int(v) <= 23:
+            out.add(int(v))
+    return sorted(out)
+
+
+def shop_run_hours(shop: dict | None) -> list[int]:
+    """Godziny pobierania sklepu: własne z ustawień sklepu albo wspólne z Ustawień."""
+    own = parse_hours(((shop or {}).get("config") or {}).get("run_hours") or [])
+    return own or run_hours()
+
+
+def hours_text(hours: list[int]) -> str:
+    return ", ".join(f"{h}:00" for h in hours)
+
+
 def run_hours_text() -> str:
-    return ", ".join(f"{h}:00" for h in run_hours())
+    return hours_text(run_hours())

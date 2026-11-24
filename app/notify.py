@@ -6,7 +6,7 @@ from email.message import EmailMessage
 
 import requests
 
-from . import db, stats
+from . import competition, db, stats
 
 log = logging.getLogger("notify")
 
@@ -16,6 +16,13 @@ DEFAULTS = {
     "ha_url": "", "ha_token": "", "ha_service": "",
     "smtp_host": "", "smtp_port": 587, "smtp_security": "starttls",
     "smtp_user": "", "smtp_password": "", "smtp_from": "", "smtp_to": "",
+    # alerty zmian w ofercie, wysyłane zaraz po odczycie
+    "comp_alerts": True,
+    "comp_scope": "watched",   # watched = tylko obserwowane produkty, all = wszystkie
+    "comp_price_pct": 10.0,    # duża zmiana ceny od … %
+    "comp_sold_out": True,
+    "comp_back": True,
+    "comp_many": 300,          # dużo zmian w jednym odczycie (0 = wyłączone)
 }
 
 
@@ -116,3 +123,59 @@ def after_run(shop: dict):
             al = stats.alerts(shop, day)
             if al:
                 send(f"{shop['name']} – alerty", "\n".join(f"• {a}" for a in al[:15]), s=s)
+
+
+def _price_txt(v) -> str:
+    return "–" if v is None else f"{v:,.2f}".replace(",", " ").replace(".", ",") + " zł"
+
+
+def competition_message(shop: dict, ts: str, s: dict) -> tuple[str, str] | None:
+    """Treść alertu o zmianach wykrytych w jednym odczycie (albo None, gdy nie ma o czym pisać)."""
+    ev = competition.reading_events(shop["id"], ts)
+    watched_only = s.get("comp_scope", "watched") != "all"
+
+    def keep(r):
+        return bool(r["watched"]) or not watched_only
+
+    try:
+        thr = float(s.get("comp_price_pct") or 0)
+    except (TypeError, ValueError):
+        thr = 0
+    lines = []
+    if thr > 0:
+        big = sorted([r for r in ev["prices"] if keep(r) and abs(r["pct"]) >= thr], key=lambda r: -abs(r["pct"]))
+        if big:
+            lines.append(f"Duże zmiany cen (od {thr:g}%): {len(big)}")
+            lines += [f"• {r['name']}: {_price_txt(r['prev_price'])} → {_price_txt(r['price'])} "
+                      f"({r['pct']:+.0f}%)".replace(".", ",") for r in big[:10]]
+    if s.get("comp_sold_out", True):
+        so = [r for r in ev["sold_out"] if keep(r)]
+        if so:
+            lines.append(f"Wyprzedane: {len(so)}")
+            lines += [f"• {r['name']}" for r in so[:10]]
+    if s.get("comp_back", True):
+        bk = [r for r in ev["back"] if keep(r)]
+        if bk:
+            lines.append(f"Wróciły do sprzedaży: {len(bk)}")
+            lines += [f"• {r['name']}" for r in bk[:10]]
+    try:
+        many = int(s.get("comp_many") or 0)
+    except (TypeError, ValueError):
+        many = 0
+    if many and ev["n"] >= many:
+        lines.insert(0, f"Dużo zmian w ofercie: {ev['n']} w odczycie z {ts[11:16]} "
+                        f"(w tym usuniętych z oferty: {ev['removed']}).")
+    if not lines:
+        return None
+    return f"{shop['name']} – zmiany w ofercie ({ts[11:16]})", "\n".join(lines)
+
+
+def competition_alerts(shop: dict | None, ts: str):
+    if not shop:
+        return
+    s = settings()
+    if not s.get("comp_alerts") or not channels(s):
+        return
+    m = competition_message(shop, ts, s)
+    if m:
+        send(*m, s=s)

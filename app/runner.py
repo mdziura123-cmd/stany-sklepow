@@ -55,24 +55,38 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         incomplete = [s for s in rep.sources if s.get("incomplete") or s.get("error")]
         if rep.mode_used == "product_pages":
             incomplete = []
+        summ = None
         if items:
             summ = db.save_snapshot(shop_id, day, items.values(), reading_ts)
             msg += (f"\nZapisano: {summ['products']} produktów, zmian: {summ['changes']}, "
-                    f"nowych: {summ['new']}, korekt: {summ.get('corrections', 0)}")
+                    f"nowych: {summ['new']}, korekt: {summ.get('corrections', 0)}, "
+                    f"wróciło do oferty: {summ.get('relisted', 0)}")
         cfg["detected"] = crawler.detected
         db.update_shop(shop_id, cfg=cfg)
         st = "błąd" if not items else ("częściowy" if incomplete else "ok")
+        if st == "ok":
+            # „usunięte z oferty” tylko po pełnym odczycie – po częściowym brak produktu nic nie znaczy
+            rem = db.mark_removed(shop_id, reading_ts)
+            if rem.get("skipped"):
+                msg += (f"\nZniknęło naraz {rem['missing']} produktów – nie oznaczam ich jako usuniętych "
+                        f"(prawdopodobnie zmiana strony sklepu).")
+            elif rem["removed"]:
+                msg += f"\nUsunięte z oferty: {rem['removed']}"
         if not items:
             msg += "\nNie znaleziono żadnych produktów ze stanem."
         db.run_end(run_id, st, len(items), crawler.fetcher.requests, msg.strip(),
                    errors=crawler.fetcher.errors, mode=rep.mode_used)
         log.info("Sklep %s: %s, produktów %d, zapytań %d", shop["name"], st, len(items), crawler.fetcher.requests)
         if items:
+            try:
+                notify.competition_alerts(db.get_shop(shop_id), reading_ts)
+            except Exception:  # noqa: BLE001
+                log.exception("Błąd alertów zmian w ofercie")
             backup.daily_backup()
             if db.get_setting(f"incoming_day_{shop_id}") != day:
                 _check_incoming(shop_id, cfg, day, run_id=run_id)
             try:
-                hours = db.run_hours()
+                hours = db.shop_run_hours(shop)
                 # podsumowanie poprzedniego dnia wysyłamy po pierwszym zaplanowanym odczycie dnia
                 if slot and hours and int(slot[11:13]) == hours[0]:
                     notify.after_run(db.get_shop(shop_id))
@@ -138,9 +152,9 @@ def run_in_background(shop_id: int):  # ręczne „Pobierz teraz”
     threading.Thread(target=run_shop, args=(shop_id,), daemon=True).start()
 
 
-def due_slot(now):
+def due_slot(now, hours: list[int] | None = None):
     """Ostatni zaplanowany odczyt, którego godzina już minęła: (slot_ts, datetime)."""
-    hours = db.run_hours()
+    hours = db.run_hours() if hours is None else hours
     if not hours:
         return None, None
     today = [h for h in hours if h <= now.hour]
@@ -160,9 +174,9 @@ def scheduler_loop():
     while True:
         try:
             now = config.now()
-            slot, slot_dt = due_slot(now)
-            if slot:
-                for shop in db.list_shops():
+            for shop in db.list_shops():
+                slot, slot_dt = due_slot(now, db.shop_run_hours(shop))
+                if slot:
                     if not shop["enabled"] or is_running():
                         continue
                     runs = db.slot_runs(shop["id"], slot)

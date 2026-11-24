@@ -109,9 +109,9 @@ def _since(period: str) -> str | None:
     return (config.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
 
-def coverage(shop_id: int, runs: list[dict], since: str | None) -> dict:
+def coverage(shop_id: int, runs: list[dict], since: str | None, hours: list[int] | None = None) -> dict:
     """Ile zaplanowanych odczytów (w obecnym harmonogramie) się udało, a których brakuje."""
-    hours = db.run_hours()
+    hours = hours if hours is not None else db.run_hours()
     now = config.now().replace(tzinfo=None)
     planned = [r for r in runs if r["planned"] and r["slot_hour"] in hours]
     if not hours or not planned:
@@ -138,8 +138,8 @@ def coverage(shop_id: int, runs: list[dict], since: str | None) -> dict:
             "missing": list(reversed(missing))[:15], "missing_n": len(missing), "from": first}
 
 
-def by_slot(runs: list[dict]) -> list[dict]:
-    hours = db.run_hours()
+def by_slot(runs: list[dict], hours: list[int] | None = None) -> list[dict]:
+    hours = hours if hours is not None else db.run_hours()
     keys = sorted({r["slot_hour"] for r in runs if r["planned"]} | set(hours))
     out = []
     for h in keys + ["ręczne"]:
@@ -180,7 +180,7 @@ def chart_items(runs: list[dict], limit: int = 40) -> list[dict]:
 def system_info(shop: dict) -> dict:
     cfg = presets.merged(shop["config"])
     now = config.now().replace(tzinfo=None)
-    hours = db.run_hours()
+    hours = db.shop_run_hours(shop)
     nxt = None
     for add in range(0, 2):
         day = now.date() + timedelta(days=add)
@@ -232,8 +232,8 @@ def report(shop: dict, period: str = "30") -> dict:
         "err_total": sum(r["errors"] or 0 for r in done),
         "last_good": last_good,
         "since_good": (now - last_good["all_end"]).total_seconds() if last_good and last_good["all_end"] else None,
-        "coverage": coverage(shop["id"], runs, since),
-        "slots": by_slot(runs),
+        "coverage": coverage(shop["id"], runs, since, db.shop_run_hours(shop)),
+        "slots": by_slot(runs, db.shop_run_hours(shop)),
         "chart": chart_items(runs),
         "sys": system_info(shop),
     }

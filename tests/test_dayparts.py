@@ -51,7 +51,8 @@ def test_dayparts_and_rollback():
     db.save_snapshot(sid, "2026-11-12", items([50, 40, 25]), "2026-11-12 05:00")
     db.save_snapshot(sid, "2026-11-12", items([60, 40, 25]), "2026-11-12 16:00")
     kinds = [r["kind"] for r in db.conn().execute(
-        "SELECT kind FROM changes WHERE product_id=1 AND day='2026-11-12' ORDER BY ts")]
+        "SELECT c.kind FROM changes c JOIN products p ON p.id = c.product_id "
+        "WHERE p.shop_id=? AND p.key='/p/0' AND c.day='2026-11-12' ORDER BY c.ts", (sid,))]
     assert kinds == ["correction", "correction"], kinds
 
 

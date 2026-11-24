@@ -30,6 +30,7 @@ Dane są przybliżone (sprzedaż i dostawa z tego samego dnia się sumują), ale
   wyprzedane do zera i te, które wróciły.
 - **Obserwowane** – własna lista produktów (gwiazdka) z progiem minimalnego stanu i alertami.
 - **Eksport CSV** (Excel) przy każdej tabeli.
+- **Analiza konkurencji** (osobna pozycja w menu) – wszystkie obserwowane sklepy razem, opis niżej.
 
 Korekty magazynowe (stan spada i następnego dnia wraca do tej samej wartości) nie są liczone
 ani jako sprzedaż, ani jako dostawa.
@@ -137,10 +138,60 @@ python -m app.cli diag https://ringsen.com/pl/categories/o-rings   # zapisuje HT
 
 Wynik `diag` (albo zapisany plik HTML) wystarczy, żeby poprawić reguły dla nowego sklepu.
 
+## Analiza konkurencji
+
+Zakładka zbiera zmiany ze wszystkich sklepów dodanych w aplikacji (albo z jednego, wybranego w filtrze):
+
+- liczba sklepów, produktów w ofercie i obserwowanych,
+- zmiany cen (w górę / w dół, z filtrem „od … %”), produkty wyprzedane i ponownie dostępne,
+  nowe i usunięte z oferty, największe zmiany stanów,
+- **aktywność godzinowa** i **mapa aktywności** (dni tygodnia × godziny) dla wszystkich zmian albo
+  osobno dla cen, dostępności, spadków stanów, wzrostów stanów (dostaw) i zmian w ofercie,
+- aktywność wg dni tygodnia, historia zmian cen, stanów i dostępności dzień po dniu,
+- porównanie sklepów (zmiany cen, średnia zmiana ceny, wyprzedane / wróciły, zmian na odczyt).
+
+Filtr okresu: 24 godziny, 7, 30, 90 dni albo własny zakres dat; można też ograniczyć analizę
+do obserwowanych produktów (gwiazdka).
+
+**Jak liczony jest rozkład godzinowy.** Zmianę widać dopiero w kolejnym odczycie – nastąpiła gdzieś
+między poprzednim a bieżącym odczytem. Każda zmiana jest więc rozkładana równo na godziny tego okna
+(np. odczyty o 23:00 i 8:00 → po 1/9 na każdą godzinę nocy). To **szacunkowa aktywność**, a nie dokładny
+czas sprzedaży czy dostawy; spadek stanu nie musi oznaczać sprzedaży. Okna dłuższe niż 36 h (przerwa
+w odczytach) są pomijane w analizie godzinowej. Im więcej godzin pobierania, tym dokładniejszy obraz.
+
+**Sklepy bez liczbowych stanów.** Jeśli sklep pokazuje tylko „dostępny / niedostępny”, wpisz w ustawieniach
+sklepu regułę stanu bez nawiasów z liczbą, np. `Dostępny|W magazynie`, a w regule braku `Niedostępny|Brak`.
+Aplikacja zapisze wtedy samą dostępność – nie wymyśla liczby sztuk.
+
+**Usunięte z oferty** są oznaczane tylko po pełnym odczycie (status „ok”). Jeśli naraz znika ponad 30%
+produktów, aplikacja uznaje to za zmianę strony sklepu i niczego nie oznacza (informacja w logu pobrania).
+
+### Konfiguracja monitorowania
+
+1. **Dodaj sklep** (menu) – podaj nazwę i link startowy; przy nieznanym sklepie uzupełnij reguły
+   (wzorzec linku produktu, wyrażenie stanu, ceny) i użyj „Testu”.
+2. W **ustawieniach sklepu**:
+   - *Dodatkowe kategorie albo pojedyncze produkty* – jeden link na linię. Link pasujący do wzorca
+     produktu jest sprawdzany jako pojedynczy produkt.
+   - *Godziny pobierania tego sklepu* – np. `6, 9, 12, 15, 18, 21, 23`. Puste = wspólne godziny
+     z Ustawień. Pobrania sklepów idą po kolei, w tle, nie blokując panelu.
+   - przerwa między zapytaniami i przestrzeganie `robots.txt`.
+3. Produkty do obserwowania oznacz gwiazdką (lista produktów sklepu).
+4. W **Ustawieniach → Powiadomienia → Zmiany w ofercie** włącz alerty o dużych zmianach cen (próg %),
+   wyprzedaniu, powrocie do sprzedaży i dużej liczbie zmian w jednym odczycie. Alerty idą zaraz po
+   odczycie przez Home Assistant lub e-mail; domyślnie dotyczą tylko obserwowanych produktów.
+
+Nieudane pobranie jest ponawiane (najwcześniej po godzinie, maks. 3 razy na godzinę z harmonogramu),
+a wszystkie próby z czasem, statusem i logiem widać w zakładce **Diagnostyka** sklepu.
+
+Każde pobranie to pełny przegląd sklepu. Przy 7 godzinach dziennie to 7 razy więcej zapytań niż
+przy jednej – dla dużych sklepów (jak Ringsen, ok. 400 zapytań na pobranie) wybierz rozsądną liczbę godzin.
+
 ## Dobre obyczaje
 
-Domyślnie aplikacja robi przerwę 1,5 s między zapytaniami, przestrzega `robots.txt` i pobiera
-dane raz dziennie. Sprawdź regulamin sklepu, zanim zaczniesz go śledzić.
+Aplikacja przedstawia się jako `stany-sklepow`, robi przerwę między zapytaniami (domyślnie 3 s,
+dla Ringsen 4 s), przestrzega `robots.txt`, zwalnia po odpowiedzi „zbyt wiele zapytań” (HTTP 429)
+i nie omija zabezpieczeń sklepów. Sprawdź regulamin sklepu, zanim zaczniesz go śledzić.
 
 Panel nie ma logowania, więc nie wystawiaj go do internetu (zostaw w sieci domowej).
 
@@ -152,4 +203,6 @@ python -m pytest tests
 ```
 
 Testy uruchamiają lokalny sklep testowy (struktura jak Ringsen) i sprawdzają oba tryby
-odczytu oraz analizę z dwóch dni.
+odczytu oraz analizę z dwóch dni. `tests/test_competition.py` sprawdza analizę konkurencji:
+rozkład godzinowy, sklepy tylko z dostępnością, usunięte / powracające produkty, harmonogram
+dla sklepu, widok dla wszystkich filtrów i alerty.
