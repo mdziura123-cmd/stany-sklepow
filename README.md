@@ -166,6 +166,23 @@ Aplikacja zapisze wtedy samą dostępność – nie wymyśla liczby sztuk.
 **Usunięte z oferty** są oznaczane tylko po pełnym odczycie (status „ok”). Jeśli naraz znika ponad 30%
 produktów, aplikacja uznaje to za zmianę strony sklepu i niczego nie oznacza (informacja w logu pobrania).
 
+### Liczniki ze strony sklepu, „na zapytanie”, pochodzenie oferty
+
+- **Licznik zamówień.** Po każdym pobraniu aplikacja otwiera jedną stronę z licznikami (dla Ringsen: strona
+  główna, sekcja „O nas”) i zapisuje liczby przy etykietach „zrealizowanych zamówień”, „produktów w katalogu”
+  i „wysyłek dziennie”. Przyrost licznika między odczytami to liczba zamówień według sklepu – widać ją
+  w „Analizie konkurencji” (tabela, wykres dzienny, mapa aktywności w widoku „zamówienia”). Po kilku dniach
+  tabela pokaże, czy licznik zmienia się na bieżąco, czy jest aktualizowany ręcznie.
+- **Kompletność odczytu.** Liczba odczytanych produktów jest porównywana z licznikiem „produktów w katalogu”;
+  wynik jest w logu pobrania i w zakładce „Diagnostyka” (ostrzeżenie poniżej 97%).
+- **„Na zapytanie”.** Produkty z takim napisem mają nadal stan 0 (statystyki sprzedaży bez zmian), ale status
+  jest zapisywany osobno. Przejście na „na zapytanie” i powrót na magazyn to osobne zdarzenia w Analizie
+  konkurencji. Zdarzenia zaczynają się od drugiego odczytu po aktualizacji – pierwszy tylko zapisuje stan wyjściowy.
+- **Marka, kraj pochodzenia, kod CN** są odczytywane z tabeli parametrów przy codziennym sprawdzaniu stron
+  produktów (bez dodatkowych zapytań). Zestawienie „Skąd pochodzi oferta” rośnie z każdym dniem.
+
+Dla innych sklepów liczniki i status ustawisz w ustawieniach sklepu → Zaawansowane.
+
 ### Konfiguracja monitorowania
 
 1. **Dodaj sklep** (menu) – podaj nazwę i link startowy; przy nieznanym sklepie uzupełnij reguły

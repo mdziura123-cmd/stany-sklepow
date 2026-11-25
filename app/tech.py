@@ -213,6 +213,17 @@ def system_info(shop: dict) -> dict:
     }
 
 
+def completeness(shop_id: int, limit: int = 12) -> list[dict]:
+    """Liczba odczytanych produktów wobec liczby deklarowanej przez sklep (licznik „produktów w katalogu”)."""
+    rows = db.conn().execute("""
+        SELECT r.ts, r.products, s.value AS declared FROM readings r
+        JOIN site_stats s ON s.shop_id = r.shop_id AND s.ts = r.ts AND s.key = 'catalog'
+        WHERE r.shop_id=? ORDER BY r.ts DESC LIMIT ?""", (shop_id, limit)).fetchall()
+    return [{"ts": r["ts"], "found": r["products"], "declared": r["declared"],
+             "pct": 100 * r["products"] / r["declared"] if r["declared"] else None,
+             "diff": r["products"] - r["declared"]} for r in rows]
+
+
 def report(shop: dict, period: str = "30") -> dict:
     since = _since(period)
     runs = [enrich(r) for r in db.runs_since(shop["id"], since)]
@@ -243,4 +254,5 @@ def report(shop: dict, period: str = "30") -> dict:
         "slots": by_slot(runs, db.shop_run_hours(shop)),
         "chart": chart_items(runs),
         "sys": system_info(shop),
+        "complete": completeness(shop["id"]),
     }

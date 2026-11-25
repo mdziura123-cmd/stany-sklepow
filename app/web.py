@@ -378,6 +378,13 @@ def shop_edit_post(req, q, sid):
     for k in presets.EDITABLE_TEXT:
         if k in f:
             cfg[k] = f.get(k, "")
+    if "site_counters" in f:
+        sc = {}
+        for line in f.get("site_counters", "").splitlines():
+            k, _, v = line.partition("=")
+            if k.strip() in ("orders", "catalog", "shipments") and v.strip():
+                sc[k.strip()] = v.strip()
+        cfg["site_counters"] = sc
     try:
         cfg["delay_seconds"] = max(0.3, float(f.get("delay_seconds", "3").replace(",", ".")))
         cfg["max_pages"] = max(1, int(f.get("max_pages", "300")))

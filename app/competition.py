@@ -29,7 +29,8 @@ CATS = {
     "up": ("Wzrosty stanów (dostawy)", "--series-4"),
     "offer": ("Nowe / usunięte produkty", "--series-5"),
 }
-METRICS = {"all": "wszystkie zmiany", **{k: v[0].lower() for k, v in CATS.items()}}
+METRICS = {"all": "wszystkie zmiany", **{k: v[0].lower() for k, v in CATS.items()},
+           "orders": "zamówienia (licznik sklepu)"}
 
 MAX_WINDOW_H = 36  # dłuższe okna (np. przerwa w odczytach) pomijamy w analizie godzinowej
 
@@ -198,7 +199,9 @@ def _offer_windows(shop_ids, per: Period, only_watched: bool):
     return db.conn().execute(f"""
         SELECT o.shop_id, o.prev_ts, o.ts,
           SUM(CASE WHEN o.kind = 'removed' THEN 1 ELSE 0 END) AS removed,
-          SUM(CASE WHEN o.kind = 'relisted' THEN 1 ELSE 0 END) AS relisted
+          SUM(CASE WHEN o.kind = 'relisted' THEN 1 ELSE 0 END) AS relisted,
+          SUM(CASE WHEN o.kind = 'on_request' THEN 1 ELSE 0 END) AS on_request,
+          SUM(CASE WHEN o.kind = 'stocked' THEN 1 ELSE 0 END) AS stocked
         FROM offer_events o {_watch_join(only_watched, "o")}
         WHERE {where} AND o.ts BETWEEN ? AND ? GROUP BY o.shop_id, o.prev_ts, o.ts""",
                              (*args, per.a, per.b)).fetchall()
@@ -238,14 +241,77 @@ def _metric_weight(r: dict, metric: str) -> float:
     if metric == "price":
         return r.get("price", 0)
     if metric == "avail":
-        return r.get("sold_out", 0) + r.get("back", 0)
+        return r.get("sold_out", 0) + r.get("back", 0) + (r.get("on_request") or 0) + (r.get("stocked") or 0)
+    if metric == "orders":
+        return r.get("orders", 0)
     if metric == "down":
         return r.get("down", 0)
     if metric == "up":
         return r.get("up", 0)
     if metric == "offer":
         return r.get("removed", 0) + r.get("relisted", 0) + r.get("new", 0)
-    return r.get("n", 0) + r.get("removed", 0) + r.get("relisted", 0) + r.get("new", 0)
+    return (r.get("n", 0) + r.get("removed", 0) + r.get("relisted", 0) + r.get("new", 0)
+            + (r.get("on_request") or 0) + (r.get("stocked") or 0))
+
+
+def _counter_windows(shop_ids, per: Period, key: str = "orders"):
+    """Przyrosty licznika sklepu między kolejnymi odczytami (spadek = licznik wyzerowany, pomijamy)."""
+    out = []
+    for sid in shop_ids:
+        prev = db.last_site_stat(sid, key, before=per.a)
+        for ts, v in db.site_stats(sid, key, since=per.a):
+            if ts > per.b:
+                break
+            if prev is not None and v >= prev[1]:
+                out.append({"shop_id": sid, "prev_ts": prev[0], "ts": ts, "orders": v - prev[1]})
+            prev = (ts, v)
+    return out
+
+
+def counters_summary(shop_ids, per: Period, rows: list[dict], names: dict) -> list[dict]:
+    out = []
+    for sid in shop_ids:
+        series = db.site_stats(sid, "orders")
+        if not series:
+            continue
+        mine = [r for r in rows if r["shop_id"] == sid]
+        total = sum(r["orders"] for r in mine)
+        changed = [r for r in mine if r["orders"] > 0]
+        last_change = None
+        for (a_ts, a), (b_ts, b) in zip(series, series[1:]):
+            if b != a:
+                last_change = b_ts
+        hours = sum((_ts(r["ts"]) - _ts(r["prev_ts"])).total_seconds() / 3600 for r in mine
+                    if _ts(r["ts"]) and _ts(r["prev_ts"]))
+        cat = db.last_site_stat(sid, "catalog")
+        ship = db.last_site_stat(sid, "shipments")
+        out.append({
+            "id": sid, "name": names.get(sid, "?"), "last": series[-1][1], "last_ts": series[-1][0],
+            "first_ts": series[0][0], "n_reads": len(series), "total": total,
+            "per_day": total / hours * 24 if hours else None,
+            "windows": len(mine), "changed": len(changed), "last_change": last_change,
+            "live": bool(changed) and len(changed) >= max(1, len(mine) // 4),
+            "catalog": cat[1] if cat else None, "shipments": ship[1] if ship else None,
+        })
+    return out
+
+
+def origin_summary(shop_ids) -> dict:
+    """Pochodzenie i marki oferty z danych zebranych przy sprawdzaniu stron produktów."""
+    c = db.conn()
+    where, args = _shop_filter(shop_ids, "p")
+    base = f"FROM products p WHERE {where} AND p.gone_ts IS NULL AND p.cur_ts IS NOT NULL"
+    total = c.execute(f"SELECT COUNT(*) {base}", args).fetchone()[0]
+    known = c.execute(f"SELECT COUNT(*) {base} AND (p.origin IS NOT NULL OR p.brand IS NOT NULL)", args).fetchone()[0]
+
+    def top(col):
+        rows = c.execute(f"""SELECT p.{col} AS k, COUNT(*) AS n, SUM(COALESCE(p.cur_stock, 0) * COALESCE(p.cur_price, 0)) AS v
+                             {base} AND p.{col} IS NOT NULL GROUP BY p.{col} ORDER BY n DESC LIMIT 12""", args).fetchall()
+        n_all = sum(r["n"] for r in rows) or 1
+        return [{"name": r["k"], "n": r["n"], "value": r["v"] or 0, "share": 100 * r["n"] / n_all} for r in rows]
+
+    return {"total": total, "known": known, "coverage": 100 * known / total if total else 0,
+            "origins": top("origin"), "brands": top("brand")}
 
 
 # ---------------------------------------------------------------- listy
@@ -316,6 +382,7 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
     ch_rows = [dict(r) for r in _change_windows(shop_ids, per, only_watched)]
     of_rows = [dict(r) for r in _offer_windows(shop_ids, per, only_watched)]
     new_rows = _new_windows(shop_ids, per, only_watched, readings)
+    ord_rows = _counter_windows(shop_ids, per)
 
     # --- sumy
     t = defaultdict(float)
@@ -326,7 +393,7 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
             t[k] += r[k] or 0
             per_shop[r["shop_id"]][k] += r[k] or 0
     for r in of_rows:
-        for k in ("removed", "relisted"):
+        for k in ("removed", "relisted", "on_request", "stocked"):
             t[k] += r[k] or 0
             per_shop[r["shop_id"]][k] += r[k] or 0
     for r in new_rows:
@@ -335,9 +402,9 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
     out["t"] = t
 
     # --- rozkład godzinowy i tygodniowy (szacunek)
-    grids = {k: Grid() for k in ["all", *CATS]}
+    grids = {k: Grid() for k in ["all", *CATS, "orders"]}
     skipped = 0
-    events = ch_rows + of_rows + [{**r, "new": r["n"], "n": 0} for r in new_rows]
+    events = ch_rows + of_rows + [{**r, "new": r["n"], "n": 0} for r in new_rows] + ord_rows
     for r in events:
         prev, cur = _ts(r.get("prev_ts")), _ts(r.get("ts"))
         ok = False
@@ -374,8 +441,12 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
                 by_day[d][k] += r[k] or 0
         for r in of_rows:
             by_day[r["ts"][:10]]["removed"] += r["removed"] or 0
+        for r in ord_rows:
+            by_day[r["ts"][:10]]["orders"] += r["orders"]
         out["hist"] = {
             "labels": labels,
+            "orders": [{"name": "Zamówienia (licznik sklepu)", "var": "--series-1",
+                        "values": [by_day[d]["orders"] for d in labels]}],
             "price": [{"name": "Podwyżki", "var": "--bad", "values": [by_day[d]["price_up"] for d in labels]},
                       {"name": "Obniżki", "var": "--good", "values": [by_day[d]["price_down"] for d in labels]}],
             "stock": [{"name": "Spadki stanów (szt.)", "var": "--series-3", "values": [by_day[d]["down_units"] for d in labels]},
@@ -394,10 +465,14 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
     avail_only = {r[0] for r in c.execute(
         f"SELECT p.shop_id FROM products p WHERE {where_p} AND p.gone_ts IS NULL AND p.cur_ts IS NOT NULL "
         f"GROUP BY p.shop_id HAVING SUM(p.cur_stock IS NOT NULL) = 0", args_p)}
+    on_req_now = {r[0]: r[1] for r in c.execute(
+        f"SELECT p.shop_id, COUNT(*) FROM products p WHERE {where_p} AND p.gone_ts IS NULL AND p.cur_ts IS NOT NULL "
+        f"AND p.cur_status='on_request' GROUP BY p.shop_id", args_p)}
+    out["n_on_request"] = sum(on_req_now.values())
     cmp = []
     for sid in shop_ids:
         s = per_shop[sid]
-        activity = s["n"] + s["removed"] + s["relisted"] + s["new"]
+        activity = s["n"] + s["removed"] + s["relisted"] + s["new"] + s["on_request"] + s["stocked"]
         cmp.append({
             "id": sid, "name": names.get(sid, "?"), "products": prod_counts.get(sid, 0),
             "readings": n_read[sid], "avail_only": sid in avail_only,
@@ -406,6 +481,8 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
             "sold_out": int(s["sold_out"]), "back": int(s["back"]), "new": int(s["new"]),
             "removed": int(s["removed"]), "down_units": s["down_units"], "up_units": s["up_units"],
             "activity": int(activity),
+            "on_request_now": on_req_now.get(sid, 0), "to_on_request": int(s["on_request"]),
+            "to_stocked": int(s["stocked"]),
             "per_reading": activity / n_read[sid] if n_read[sid] else None,
             "share": 100 * activity / prod_counts[sid] if prod_counts.get(sid) else None,
         })
@@ -425,7 +502,11 @@ def report(period: str = "7", d_from: str = "", d_to: str = "", shop_ids: list[i
     out["removed"] = _offer_list("removed", shop_ids, per, only_watched)
     out["relisted"] = _offer_list("relisted", shop_ids, per, only_watched, limit=50)
     out["new"] = _new_list(shop_ids, per, only_watched, readings)
-    out["has_data"] = bool(ch_rows or of_rows or new_rows)
+    out["on_request_list"] = _offer_list("on_request", shop_ids, per, only_watched)
+    out["stocked_list"] = _offer_list("stocked", shop_ids, per, only_watched, limit=50)
+    out["counters"] = counters_summary(shop_ids, per, ord_rows, names)
+    out["origin"] = origin_summary(shop_ids)
+    out["has_data"] = bool(ch_rows or of_rows or new_rows or ord_rows)
     out["n_readings"] = sum(n_read.values())
     return out
 

@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import datetime, timedelta
 
-from . import backup, config, db, incoming, notify, presets
+from . import backup, config, db, incoming, notify, presets, scraper
 from .scraper import Crawler, StopRequested
 
 log = logging.getLogger("runner")
@@ -64,6 +64,8 @@ def run_shop(shop_id: int, slot: str | None = None, reading_ts: str | None = Non
         cfg["detected"] = crawler.detected
         db.update_shop(shop_id, cfg=cfg)
         st = "błąd" if not items else ("częściowy" if incomplete else "ok")
+        if items:
+            msg += _site_counters(shop_id, cfg, crawler, reading_ts, len(items), st)
         if st == "ok":
             # „usunięte z oferty” tylko po pełnym odczycie – po częściowym brak produktu nic nie znaczy
             rem = db.mark_removed(shop_id, reading_ts)
@@ -150,6 +152,41 @@ def run_incoming(shop_id: int, limit: int | None = None):
 
 def run_in_background(shop_id: int):  # ręczne „Pobierz teraz”
     threading.Thread(target=run_shop, args=(shop_id,), daemon=True).start()
+
+
+COMPLETE_MIN = 0.97  # odczyt obejmujący mniej niż 97% deklarowanego katalogu oznaczamy w logu
+
+
+def _site_counters(shop_id: int, cfg: dict, crawler, ts: str, found: int, status: str) -> str:
+    """Jedno zapytanie o stronę z licznikami (np. „41 500 zrealizowanych zamówień”) i kontrola kompletności."""
+    url, labels = (cfg.get("site_counters_url") or "").strip(), cfg.get("site_counters") or {}
+    if not url or not labels:
+        return ""
+    try:
+        html = crawler.fetcher.get(url)
+        vals = scraper.parse_counters(html, labels) if html else {}
+    except StopRequested:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.warning("Liczniki sklepu %s: %s", shop_id, e)
+        return "\nLiczniki sklepu: błąd odczytu"
+    if not vals:
+        return "\nLiczniki sklepu: nie znaleziono na stronie"
+    prev = {k: db.last_site_stat(shop_id, k, before=ts) for k in vals}
+    db.save_site_stats(shop_id, ts, vals)
+    parts = []
+    names = {"orders": "zamówienia", "catalog": "produkty w katalogu", "shipments": "wysyłki dziennie"}
+    for k, v in vals.items():
+        p = prev.get(k)
+        d = f" ({v - p[1]:+.0f})" if p else ""
+        parts.append(f"{names.get(k, k)}: {v:.0f}{d}")
+    msg = "\nLiczniki sklepu: " + ", ".join(parts)
+    if "catalog" in vals and status == "ok" and vals["catalog"]:
+        share = found / vals["catalog"]
+        msg += f"\nKompletność: {found} z {vals['catalog']:.0f} deklarowanych ({100 * share:.1f}%)"
+        if share < COMPLETE_MIN:
+            msg += " – mniej niż zwykle, możliwa nowa kategoria albo zmiana strony"
+    return msg
 
 
 def due_slot(now, hours: list[int] | None = None):

@@ -47,9 +47,15 @@
     <label>Wzorzec linku kategorii<input name="category_link_pattern" value="{{ cfg.category_link_pattern }}"></label>
     <label>Stan (pierwsza grupa = liczba)<input name="stock_regex" value="{{ cfg.stock_regex }}"></label>
     <label>Brak towaru (liczony jako 0)<input name="zero_regex" value="{{ cfg.zero_regex }}"></label>
+    <label>Status „na zapytanie” (zapisywany osobno, np. <code>Na zapytanie</code>)<input name="on_request_regex" value="{{ cfg.on_request_regex }}"></label>
     <label>Cena<input name="price_regex" value="{{ cfg.price_regex }}"></label>
     <label>Kod produktu<input name="code_regex" value="{{ cfg.code_regex }}"></label>
     <label>Liczba produktów na liście<input name="total_regex" value="{{ cfg.total_regex }}"></label>
+    <label>Strona z licznikami sklepu (np. strona główna)<input name="site_counters_url" value="{{ cfg.site_counters_url }}" placeholder="https://sklep.pl/"></label>
+    <label>Liczniki – jedna etykieta na linię, w formacie <code>klucz=tekst</code> (orders, catalog, shipments)
+      <textarea name="site_counters" rows="3" placeholder="orders=zrealizowanych zamówień&#10;catalog=produktów w katalogu">{% for k, v in (cfg.site_counters or {}).items() %}{{ k }}={{ v }}
+{% endfor %}</textarea></label>
+    <p class="hint">Po każdym pobraniu aplikacja otwiera tę jedną stronę i zapisuje liczby stojące przy etykietach. „catalog” służy do kontroli, czy odczyt objął cały katalog.</p>
     <div class="row">
       <label>Przerwa między zapytaniami (s)<input name="delay_seconds" value="{{ cfg.delay_seconds }}"></label>
       <label>Maks. stron na listę<input name="max_pages" value="{{ cfg.max_pages }}"></label>

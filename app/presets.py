@@ -32,12 +32,17 @@ DEFAULT = {
     "respect_robots": True,
     # ile stron produktów dziennie sprawdzać pod kątem zapowiedzianych dostaw (0 = wyłączone)
     "incoming_pages": 0,
+    # status „na zapytanie” (sklep nie trzyma towaru, sprowadza go) – zapisywany osobno od stanu 0
+    "on_request_regex": "",
+    # liczniki na stronie sklepu, np. „41 500 zrealizowanych zamówień” – adres i etykiety (puste = wyłączone)
+    "site_counters_url": "",
+    "site_counters": {},
     # wyniki automatycznego wykrywania (uzupełnia aplikacja)
     "detected": {},
 }
 
 # Podnieś numer po zmianie presetu – zapisane sklepy dostaną nowe reguły same.
-PRESET_VERSION = {"ringsen.com": 4}
+PRESET_VERSION = {"ringsen.com": 5}
 
 PRESETS = {
     "ringsen.com": {
@@ -53,12 +58,17 @@ PRESETS = {
         # łagodne tempo, żeby nie obciążać serwera sklepu (regulamin §3 ust. 3: zakaz zakłócania działania)
         "delay_seconds": 4,
         "total_regex": r"Pozycje\D{0,5}\d+\s*[–\-]\s*\d+\s*z\s*(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)\b",
+        "on_request_regex": r"Na zapytanie",
+        # sekcja „O nas” na stronie głównej: liczba produktów, zrealizowanych zamówień i wysyłek dziennie
+        "site_counters_url": "https://ringsen.com/pl",
+        "site_counters": {"orders": "zrealizowanych zamówień", "catalog": "produktów w katalogu",
+                          "shipments": "wysyłek dziennie"},
     },
 }
 
 EDITABLE_TEXT = [
-    "product_link_pattern", "category_link_pattern", "stock_regex", "zero_regex",
-    "price_regex", "code_regex", "total_regex",
+    "product_link_pattern", "category_link_pattern", "stock_regex", "zero_regex", "on_request_regex",
+    "price_regex", "code_regex", "total_regex", "site_counters_url",
 ]
 
 

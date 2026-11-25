@@ -120,6 +120,25 @@
 </section>
 {% endif %}
 
+{% if t.complete %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('check') }} Kompletność odczytów</h2><span class="hint">odczytane produkty wobec licznika „produktów w katalogu” na stronie sklepu</span></div>
+  <div class="card-body flush tbl-wrap">
+  <table>
+    <thead><tr><th>Odczyt</th><th class="r">Odczytano</th><th class="r">Sklep deklaruje</th><th class="r">Różnica</th><th class="r">Pokrycie</th></tr></thead>
+    <tbody>
+    {% for c in t.complete %}
+      <tr><td class="mono">{{ c.ts }}</td><td class="r">{{ c.found|num }}</td><td class="r">{{ c.declared|num }}</td>
+        <td class="r">{{ '+' if c.diff > 0 }}{{ c.diff|num }}</td>
+        <td class="r">{% if c.pct is not none %}<span class="pill {{ 'ok' if c.pct >= 97 else 'warn' }}">{{ '%.1f'|format(c.pct)|replace('.', ',') }}%</span>{% else %}–{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-body"><p class="hint" style="margin:0">Poniżej 97% odczyt mógł pominąć część katalogu (np. nowa kategoria albo zmiana strony). Licznik sklepu bywa zaokrąglony („26093+”), więc drobne różnice są normalne.</p></div>
+</section>
+{% endif %}
+
 <section class="card">
   <div class="card-head"><h2>{{ icon('sliders') }} Konfiguracja techniczna</h2></div>
   <div class="card-body">

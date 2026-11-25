@@ -70,6 +70,46 @@ def _section(soup, headings):
     return None
 
 
+ATTR_LABELS = {
+    "brand": ("marka", "producent", "brand", "manufacturer", "hersteller", "marke"),
+    "origin": ("kraj pochodzenia", "country of origin", "herkunftsland", "pochodzenie"),
+    "cn_code": ("kod cn", "cn code", "kod taric", "zolltarifnummer"),
+}
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"\s+", " ", t).strip().rstrip(":").strip().lower()
+
+
+def parse_attrs(soup) -> dict:
+    """Marka, kraj pochodzenia i kod CN z tabeli parametrów produktu (etykieta i wartość obok)."""
+    out = {}
+    for el in soup.find_all(["td", "th", "dt", "span", "div", "p", "li", "strong", "b", "label"]):
+        if el.find(["td", "th", "dt", "dd", "div", "p", "li", "table"]):
+            continue
+        raw = el.get_text(" ", strip=True)
+        if not raw or len(raw) > 80:
+            continue
+        low = _norm(raw)
+        for key, labels in ATTR_LABELS.items():
+            if key in out:
+                continue
+            val = None
+            for lab in labels:
+                if low == lab:
+                    nxt = el.find_next_sibling()
+                    if nxt is None and el.parent is not None:
+                        nxt = el.parent.find_next_sibling()
+                    val = nxt.get_text(" ", strip=True) if nxt is not None else None
+                    break
+                if low.startswith(lab + ":") or (raw.lower().startswith(lab) and ":" in raw[:len(lab) + 2]):
+                    val = raw.split(":", 1)[1].strip()
+                    break
+            if val and 0 < len(val) <= 60 and _norm(val) not in ATTR_LABELS[key]:
+                out[key] = re.sub(r"\s+", " ", val)
+    return out
+
+
 def parse(html: str, today: date | None = None) -> dict | None:
     """Zwraca {"deliveries": [{"date","qty"}], "orderable": [{"qty","min","max"}]} albo None,
     gdy strona nie jest stroną produktu (np. błąd)."""
@@ -107,6 +147,7 @@ def parse(html: str, today: date | None = None) -> dict | None:
             lo = int(days[1]) if days else None
             hi = int(days[2]) if days and days.lastindex and days.lastindex >= 2 else lo
             out["orderable"].append({"qty": to_float(m[1]) if m else None, "min": lo, "max": hi})
+    out["attrs"] = parse_attrs(soup)
     out["deliveries"].sort(key=lambda x: x["date"])
     out["orderable"].sort(key=lambda x: (x["min"] or 0))
     return out
@@ -164,7 +205,8 @@ def save(shop_id: int, pid: int, info: dict, ts: str):
         lo = min(o["min"] for o in orders if o["min"] is not None) if any(o["min"] is not None for o in orders) else None
         hi = max(o["max"] for o in orders if o["max"] is not None) if any(o["max"] is not None for o in orders) else None
         order_days = (f"{lo}–{hi}" if lo != hi else f"{lo}") if lo is not None else None
-    blob = json.dumps(info, ensure_ascii=False, sort_keys=True)
+    attrs = info.get("attrs") or {}
+    blob = json.dumps({"deliveries": dels, "orderable": orders}, ensure_ascii=False, sort_keys=True)
     with c:
         old = c.execute("SELECT inc_json FROM products WHERE id=?", (pid,)).fetchone()
         c.execute("""UPDATE products SET inc_checked=?, inc_next_date=?, inc_next_qty=?, inc_order_qty=?,
@@ -174,6 +216,10 @@ def save(shop_id: int, pid: int, info: dict, ts: str):
             c.execute("""INSERT OR REPLACE INTO incoming_snap(product_id, ts, next_date, next_qty, order_qty, order_days, data)
                          VALUES (?,?,?,?,?,?,?)""",
                       (pid, ts, nxt["date"] if nxt else None, nxt["qty"] if nxt else None, order_qty, order_days, blob))
+        if attrs:
+            c.execute("""UPDATE products SET brand=COALESCE(?, brand), origin=COALESCE(?, origin),
+                         cn_code=COALESCE(?, cn_code) WHERE id=?""",
+                      (attrs.get("brand"), attrs.get("origin"), attrs.get("cn_code"), pid))
         _match_announcements(c, shop_id, pid, dels, ts)
 
 

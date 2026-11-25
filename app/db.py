@@ -124,6 +124,13 @@ CREATE TABLE IF NOT EXISTS offer_events (
     kind TEXT NOT NULL            -- removed / relisted
 );
 CREATE INDEX IF NOT EXISTS offer_events_shop_ts ON offer_events(shop_id, ts);
+CREATE TABLE IF NOT EXISTS site_stats (   -- liczniki ze strony sklepu (np. „41 500 zrealizowanych zamówień”)
+    shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL,
+    key TEXT NOT NULL,            -- orders / catalog / shipments
+    value REAL NOT NULL,
+    PRIMARY KEY (shop_id, ts, key)
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -134,7 +141,8 @@ EXTRA_COLUMNS = {
     "products": {"cur_stock": "REAL", "cur_price": "REAL", "cur_day": "TEXT", "stock_since": "TEXT",
                  "cur_ts": "TEXT", "first_ts": "TEXT",
                  "inc_checked": "TEXT", "inc_next_date": "TEXT", "inc_next_qty": "REAL", "inc_order_qty": "REAL",
-                 "inc_order_days": "TEXT", "inc_json": "TEXT", "cur_avail": "INTEGER", "gone_ts": "TEXT"},
+                 "inc_order_days": "TEXT", "inc_json": "TEXT", "cur_avail": "INTEGER", "gone_ts": "TEXT",
+                 "cur_status": "TEXT", "brand": "TEXT", "origin": "TEXT", "cn_code": "TEXT"},
     "changes": {"ts": "TEXT", "prev_ts": "TEXT", "prev_avail": "INTEGER", "avail": "INTEGER"},
     "snapshots": {"avail": "INTEGER"},
     "runs": {"ts": "TEXT", "errors": "INTEGER", "mode": "TEXT",
@@ -157,6 +165,9 @@ def conn() -> sqlite3.Connection:
 
 def db_path() -> str:
     return os.path.join(config.DATA_DIR, "stany.db")
+
+
+SCHEMA_VERSION = 5  # 5: status „na zapytanie”, marka/pochodzenie, liczniki ze strony sklepu
 
 
 def _backup_before_migration(target: int):
@@ -182,8 +193,8 @@ def init():
     old_schema = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone() \
         and c.execute("SELECT value FROM settings WHERE key='schema'").fetchone()
     old_schema = int(old_schema[0]) if old_schema else None
-    if old_schema is not None and old_schema < 4:
-        _backup_before_migration(4)
+    if old_schema is not None and old_schema < SCHEMA_VERSION:
+        _backup_before_migration(SCHEMA_VERSION)
     c.executescript(SCHEMA)
     added = False
     for table, columns in EXTRA_COLUMNS.items():
@@ -191,7 +202,8 @@ def init():
         for name, typ in columns.items():
             if name not in cols:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
-                if table == "products" and name not in ("cur_ts", "first_ts", "cur_avail", "gone_ts") \
+                if table == "products" and name not in ("cur_ts", "first_ts", "cur_avail", "gone_ts", "cur_status",
+                                                         "brand", "origin", "cn_code") \
                         and not name.startswith("inc_"):
                     added = True
     c.execute("CREATE INDEX IF NOT EXISTS changes_shop_ts ON changes(shop_id, ts)")
@@ -202,7 +214,7 @@ def init():
         migrate_v2()
     if (get_setting("schema") or 0) < 4:
         migrate_v4()
-    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', '4')")
+    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('schema', ?)", (str(SCHEMA_VERSION),))
     c.commit()
     _migrate_run_hours()
 
@@ -468,9 +480,14 @@ def _rollback_reading(c, shop_id: int, ts: str):
                   (pid, day))
         c.execute("""UPDATE products SET stock_since = COALESCE((SELECT MAX(day) FROM changes ch
                      WHERE ch.product_id = products.id AND ch.kind <> 'price'), first_seen) WHERE id=?""", (pid,))
-    for r in c.execute("SELECT product_id, kind FROM offer_events WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchall():
+    for r in c.execute("SELECT product_id, kind FROM offer_events WHERE shop_id=? AND ts=? ORDER BY id DESC",
+                       (shop_id, ts)).fetchall():
         if r["kind"] == "removed":
             c.execute("UPDATE products SET gone_ts=NULL WHERE id=?", (r["product_id"],))
+        elif r["kind"] == "on_request":
+            c.execute("UPDATE products SET cur_status=NULL WHERE id=?", (r["product_id"],))
+        elif r["kind"] == "stocked":
+            c.execute("UPDATE products SET cur_status='on_request' WHERE id=?", (r["product_id"],))
         else:
             back = c.execute("SELECT MAX(ts) FROM offer_events WHERE product_id=? AND kind='removed' AND ts<?",
                              (r["product_id"], ts)).fetchone()[0]
@@ -501,12 +518,25 @@ def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
         if c.execute("SELECT 1 FROM readings WHERE shop_id=? AND ts=?", (shop_id, ts)).fetchone():
             _rollback_reading(c, shop_id, ts)
         prev_reading = c.execute("SELECT MAX(ts) FROM readings WHERE shop_id=? AND ts<?", (shop_id, ts)).fetchone()[0]
+        # zdarzenia „na zapytanie” dopiero od drugiego odczytu, w którym sklep w ogóle ma taki status –
+        # inaczej pierwszy odczyt po aktualizacji oznaczyłby wszystkie takie produkty jako „nowo na zapytanie”
+        status_ready = bool(get_setting(f"status_ready_{shop_id}"))
+        any_status = any(getattr(it, "on_request", False) for it in items)
         known = {r["key"]: r for r in c.execute(
-            "SELECT id, key, cur_stock, cur_price, cur_day, cur_ts, cur_avail, gone_ts FROM products WHERE shop_id=?",
+            "SELECT id, key, cur_stock, cur_price, cur_day, cur_ts, cur_avail, gone_ts, cur_status "
+            "FROM products WHERE shop_id=?",
             (shop_id,))}
         for it in items:
             av = _avail(it.stock, getattr(it, "available", None))
+            status = "on_request" if getattr(it, "on_request", False) else None
             old = known.get(it.key)
+            if status_ready and old is not None and old["cur_day"] is not None \
+                    and (old["cur_status"] or None) != status:
+                # „na zapytanie” ↔ trzymany na magazynie – osobne zdarzenie, niezależne od stanu
+                c.execute("INSERT INTO offer_events(shop_id, product_id, ts, prev_ts, kind) VALUES (?,?,?,?,?)",
+                          (shop_id, old["id"], ts, old["cur_ts"], "on_request" if status else "stocked"))
+            if old is not None and (old["cur_status"] or None) != status:
+                c.execute("UPDATE products SET cur_status=? WHERE id=?", (status, old["id"]))
             if old is not None and old["gone_ts"]:
                 c.execute("INSERT INTO offer_events(shop_id, product_id, ts, prev_ts, kind) VALUES (?,?,?,?,'relisted')",
                           (shop_id, old["id"], ts, prev_reading))
@@ -516,10 +546,11 @@ def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
                 if old is None:
                     pid = c.execute(
                         """INSERT INTO products(shop_id, key, name, url, code, category, first_seen, last_seen,
-                                                cur_stock, cur_price, cur_day, cur_ts, first_ts, stock_since, cur_avail)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                                cur_stock, cur_price, cur_day, cur_ts, first_ts, stock_since, cur_avail,
+                                                cur_status)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (shop_id, it.key, it.name, it.url, it.code, it.category, day, day,
-                         it.stock, it.price, day, ts, ts, day, av)).lastrowid
+                         it.stock, it.price, day, ts, ts, day, av, status)).lastrowid
                     summary["new"] += 1
                 else:
                     pid = old["id"]
@@ -573,6 +604,8 @@ def save_snapshot(shop_id: int, day: str, items, ts: str | None = None) -> dict:
         c.execute("INSERT OR REPLACE INTO shop_days(shop_id, day, products, stock_value) VALUES (?,?,?,?)",
                   (shop_id, day, len(items), value))
         summary["corrections"] = _mark_reversals(c, ts=ts)
+    if any_status and not status_ready:
+        set_setting(f"status_ready_{shop_id}", ts)
     return summary
 
 
@@ -721,3 +754,34 @@ def hours_text(hours: list[int]) -> str:
 
 def run_hours_text() -> str:
     return hours_text(run_hours())
+
+
+# ---------------------------------------------------------------- liczniki ze strony sklepu
+
+def save_site_stats(shop_id: int, ts: str, values: dict):
+    c = conn()
+    with c:
+        for k, v in values.items():
+            if v is not None:
+                c.execute("INSERT OR REPLACE INTO site_stats(shop_id, ts, key, value) VALUES (?,?,?,?)",
+                          (shop_id, ts, k, float(v)))
+
+
+def site_stats(shop_id: int, key: str, since: str | None = None):
+    """Odczyty licznika od najstarszego: [(ts, value)]."""
+    q = "SELECT ts, value FROM site_stats WHERE shop_id=? AND key=?"
+    args = [shop_id, key]
+    if since:
+        q += " AND ts>=?"
+        args.append(since)
+    return [(r[0], r[1]) for r in conn().execute(q + " ORDER BY ts", args)]
+
+
+def last_site_stat(shop_id: int, key: str, before: str | None = None):
+    q = "SELECT ts, value FROM site_stats WHERE shop_id=? AND key=?"
+    args = [shop_id, key]
+    if before:
+        q += " AND ts<?"
+        args.append(before)
+    r = conn().execute(q + " ORDER BY ts DESC LIMIT 1", args).fetchone()
+    return (r[0], r[1]) if r else None

@@ -45,13 +45,19 @@
 <div class="card">{{ empty('Nie obserwujesz jeszcze żadnego sklepu', 'Dodaj sklep konkurencji przyciskiem „Dodaj sklep” w menu.', 'store') }}</div>
 {% else %}
 {% set t = r.t %}
+{% set t_orders = r.counters|sum(attribute='total') %}
 <div class="kpis">
   {{ kpi('Monitorowane sklepy', r.n_shops|string, foot=(r.n_enabled ~ ' z automatycznym pobieraniem'), dotvar='--series-1') }}
   {{ kpi('Produkty w ofercie', r.n_products|num, foot=(r.n_watched|num ~ ' obserwowanych')) }}
   {{ kpi('Zmiany cen', t.price|num, foot=(t.price_up|num ~ ' w górę · ' ~ t.price_down|num ~ ' w dół')) }}
   {{ kpi('Wyprzedane', t.sold_out|num, foot=('wróciło do sprzedaży: ' ~ t.back|num)) }}
   {{ kpi('Nowe / usunięte', t.new|num ~ ' / ' ~ t.removed|num, foot=('wróciło do oferty: ' ~ t.relisted|num)) }}
+  {% if r.counters %}
+  {{ kpi('Zamówienia (licznik)', t_orders|num if t_orders is defined else '–', foot='z licznika na stronie sklepu') }}
+  {% else %}
   {{ kpi('Odczyty w okresie', r.n_readings|num, foot=('zmian łącznie: ' ~ t.n|num)) }}
+  {% endif %}
+  {{ kpi('Na zapytanie', r.n_on_request|num, foot=('przeszło: ' ~ t.on_request|num ~ ' · wróciło na magazyn: ' ~ t.stocked|num)) }}
 </div>
 
 {% if not r.has_data %}
@@ -76,6 +82,35 @@
     </div>
   </div>
 </section>
+
+{% if r.counters %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('box') }} Zamówienia z licznika sklepu</h2><span class="hint">licznik „zrealizowanych zamówień” ze strony sklepu</span></div>
+  <div class="card-body flush tbl-wrap">
+  <table>
+    <thead><tr><th>Sklep</th><th class="r">Licznik teraz</th><th class="r">Zamówień w okresie</th><th class="r">Średnio / dzień</th>
+      <th class="hide-m">Ostatnia zmiana licznika</th><th class="r hide-m">Katalog / wysyłki dziennie</th></tr></thead>
+    <tbody>
+    {% for c in r.counters %}
+      <tr>
+        <td><b>{{ c.name }}</b><div class="meta">odczytów licznika: {{ c.n_reads }} (od {{ c.first_ts[5:10]|replace('-', '.') }})</div></td>
+        <td class="r mono">{{ c.last|num }}</td>
+        <td class="r"><b>{{ c.total|num }}</b></td>
+        <td class="r">{{ c.per_day|num if c.per_day is not none else '–' }}</td>
+        <td class="hide-m">{% if c.last_change %}<span class="mono">{{ c.last_change[5:16]|replace('-', '.') }}</span>{% else %}<span class="muted">jeszcze się nie zmienił</span>{% endif %}
+          {% if c.windows >= 4 %}<div class="meta">{% if c.live %}zmienia się na bieżąco ({{ c.changed }} z {{ c.windows }} okien){% else %}zmienia się rzadko ({{ c.changed }} z {{ c.windows }} okien) – raczej aktualizowany ręcznie{% endif %}</div>{% endif %}</td>
+        <td class="r hide-m">{{ c.catalog|num if c.catalog else '–' }} / {{ c.shipments|num if c.shipments else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-body">
+    {% if r.hist %}{{ charts.line_chart(r.hist.labels, r.hist.orders, height=200) }}{% endif %}
+    <p class="hint">Przyrost licznika między odczytami to liczba zamówień zrealizowanych w tym czasie – według sklepu. Licznik może być zaokrąglony („41 500+”) albo aktualizowany ręcznie; po kilku dniach tabela pokaże, czy zmienia się na bieżąco. Mapa aktywności ma osobny widok „zamówienia (licznik sklepu)”.</p>
+  </div>
+</section>
+{% endif %}
 
 <section class="card">
   <div class="card-head"><h2>Aktywność godzinowa (szacunek)</h2><span class="hint">liczba zmian rozłożona na godziny</span></div>
@@ -157,7 +192,7 @@
   <div class="card-body flush tbl-wrap">
   <table>
     <thead><tr><th>Sklep</th><th class="r">Produkty</th><th class="r">Odczyty</th><th class="r">Zmiany cen</th>
-      <th class="r">Wyprzedane / wróciły</th><th class="r hide-m">Nowe / usunięte</th><th class="r hide-m">Spadki / wzrosty stanów</th><th class="r">Zmian / odczyt</th></tr></thead>
+      <th class="r">Wyprzedane / wróciły</th><th class="r hide-m">Na zapytanie</th><th class="r hide-m">Nowe / usunięte</th><th class="r hide-m">Spadki / wzrosty stanów</th><th class="r">Zmian / odczyt</th></tr></thead>
     <tbody>
     {% for s in r.compare %}
       <tr>
@@ -167,6 +202,7 @@
         <td class="r nowrap">{{ s.price|num }} <span class="small muted">↑{{ s.price_up }} ↓{{ s.price_down }}</span>
           {% if s.price_avg_pct is not none %}<div class="meta">średnio {{ '%.1f'|format(s.price_avg_pct)|replace('.', ',') }}%</div>{% endif %}</td>
         <td class="r">{{ s.sold_out|num }} / {{ s.back|num }}</td>
+        <td class="r hide-m nowrap">{{ s.on_request_now|num }}{% if s.to_on_request or s.to_stocked %} <span class="small muted">+{{ s.to_on_request }} −{{ s.to_stocked }}</span>{% endif %}</td>
         <td class="r hide-m">{{ s.new|num }} / {{ s.removed|num }}</td>
         <td class="r hide-m">{% if s.avail_only %}–{% else %}{{ s.down_units|num }} / {{ s.up_units|num }}{% endif %}</td>
         <td class="r"><b>{{ s.per_reading|num if s.per_reading is not none else '–' }}</b></td>
@@ -241,6 +277,27 @@
   </section>
 </div>
 
+<div class="grid g2">
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('clock') }} Przeszły na „na zapytanie”</h2><span class="hint">sklep przestał trzymać na magazynie</span></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.on_request_list %}{{ empty('Brak takich zmian', 'Zmiany statusu „na zapytanie” są zapisywane od tej wersji aplikacji.', 'check') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Cena</th></tr></thead><tbody>
+      {% for x in r.on_request_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('refresh') }} Wróciły na magazyn</h2><span class="hint">z „na zapytanie” do stanu w sztukach</span></div>
+    <div class="card-body flush tbl-wrap tall">
+      {% if not r.stocked_list %}{{ empty('Brak takich zmian', '', 'box') }}{% else %}
+      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Stan teraz</th></tr></thead><tbody>
+      {% for x in r.stocked_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+    </div>
+  </section>
+</div>
+
 <section class="card">
   <div class="card-head"><h2>{{ icon('box') }} Największe zmiany stanów</h2><span class="hint">50 największych w okresie</span></div>
   <div class="card-body flush tbl-wrap tall">
@@ -251,6 +308,28 @@
         <td class="r"><span class="delta {{ 'up' if x.delta > 0 else 'down' }}">{{ '+' if x.delta > 0 }}{{ x.delta|num }}</span></td></tr>
     {% endfor %}
     </tbody></table>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if r.origin and r.origin.known %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('store') }} Skąd pochodzi oferta</h2>
+    <span class="hint">dane z {{ r.origin.known|num }} z {{ r.origin.total|num }} produktów ({{ '%.0f'|format(r.origin.coverage) }}%)</span></div>
+  <div class="card-body">
+    <div class="grid g2" style="margin:0">
+      {% for title, rows in [('Kraj pochodzenia', r.origin.origins), ('Marka / producent', r.origin.brands)] %}
+      <div>
+        <h3 style="margin:0 0 8px">{{ title }}</h3>
+        {% if not rows %}<p class="muted small">Brak danych.</p>{% else %}
+        <table>
+          <thead><tr><th>{{ title }}</th><th class="r">Produkty</th><th class="r">Udział</th><th class="r hide-m">Wartość magazynu</th></tr></thead>
+          <tbody>{% for x in rows %}<tr><td>{{ x.name }}</td><td class="r">{{ x.n|num }}</td><td class="r">{{ '%.0f'|format(x.share) }}%</td><td class="r hide-m">{{ x.value|money }}</td></tr>{% endfor %}</tbody>
+        </table>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="hint">Marka i kraj pochodzenia są odczytywane przy codziennym sprawdzaniu stron produktów (zapowiedziane dostawy), bez dodatkowych zapytań. Przy 200 stronach dziennie pełny katalog zbiera się stopniowo – udział rośnie z każdym dniem.</p>
   </div>
 </section>
 {% endif %}

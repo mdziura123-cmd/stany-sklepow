@@ -85,6 +85,7 @@ class Item:
     category: str = ""
     category_size: int = 10**9  # im mniejsza kategoria, tym dokładniejsza
     available: bool | None = None  # sklep pokazuje tylko dostępność, bez liczby sztuk
+    on_request: bool = False       # „na zapytanie” – sklep nie trzyma towaru na magazynie, sprowadza go
 
 
 @dataclass
@@ -96,6 +97,7 @@ class Rules:
     price: re.Pattern | None
     code: re.Pattern | None
     total: re.Pattern | None
+    on_request: re.Pattern | None = None
 
     @classmethod
     def from_config(cls, cfg: dict) -> "Rules":
@@ -118,6 +120,7 @@ class Rules:
             price=c("price_regex"),
             code=c("code_regex"),
             total=c("total_regex"),
+            on_request=c("on_request_regex"),
         )
 
     def is_product(self, url: str) -> bool:
@@ -283,6 +286,17 @@ def parse_stock(text: str, rules: Rules) -> tuple[int | None, bool, bool | None]
     return None, False, None
 
 
+def parse_on_request(text: str, rules: Rules) -> bool:
+    """Czy produkt ma status „na zapytanie” (napis wcześniej niż liczbowy stan)."""
+    if not rules.on_request:
+        return False
+    o = rules.on_request.search(text)
+    if not o:
+        return False
+    m = rules.stock.search(text)
+    return not m or o.start() < m.start()
+
+
 def parse_listing(html: str, base_url: str, rules: Rules) -> Page:
     soup = BeautifulSoup(html, "lxml")
     links: dict[str, str] = {}
@@ -322,7 +336,8 @@ def parse_listing(html: str, base_url: str, rules: Rules) -> Page:
         code = first_group(rules.code.search(text)) if rules.code else None
         price = to_float(first_group(rules.price.search(text))) if rules.price else None
         items.append(Item(key=urlparse(u).path, name=name[:300], url=u, stock=stock,
-                          price=price, code=code or "", available=avail))
+                          price=price, code=code or "", available=avail,
+                          on_request=parse_on_request(text, rules)))
 
     page_text = soup.get_text(" ", strip=True)
     total = to_int(first_group(rules.total.search(page_text))) if rules.total else None
@@ -359,7 +374,8 @@ def parse_product_page(html: str, url: str, rules: Rules) -> Item | None:
             category = crumbs[-2].get_text(" ", strip=True)
     cu = clean_url(url)
     return Item(key=urlparse(cu).path, name=name[:300] or slug_label(cu), url=cu, stock=stock,
-                price=price, code=code or "", category=category, available=avail)
+                price=price, code=code or "", category=category, available=avail,
+                on_request=parse_on_request(part[:4000], rules))
 
 
 # ---------------------------------------------------------------- przeszukiwanie
@@ -510,7 +526,7 @@ class Crawler:
                 it.category, it.category_size = label, size
                 items[key] = it
             else:  # zaktualizuj stan, zostaw dokładniejszą kategorię
-                prev.stock, prev.price, prev.available = it.stock, it.price or prev.price, it.available
+                prev.stock, prev.price, prev.available, prev.on_request = it.stock, it.price or prev.price, it.available, it.on_request
         info["found"] = len(found)
         if first.total and len(found) < 0.9 * first.total:
             info["incomplete"] = True
@@ -654,4 +670,52 @@ def test_shop(cfg: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         out["error"] = str(e)
     out["requests"] = c.fetcher.requests
+    return out
+
+
+# ---------------------------------------------------------------- liczniki na stronie sklepu
+
+_COUNT_NUM = re.compile(r"(\d{1,3}(?:[ \u00a0\u202f,.]\d{3})+|\d+)\s*\+?")
+_DATA_NUM = re.compile(r'data-(?:count|target|to|value|number|end)\s*=\s*["\']?(\d[\d.,\s]*)', re.I)
+
+
+def _count_value(s: str) -> int | None:
+    digits = re.sub(r"\D", "", s or "")
+    return int(digits) if digits else None
+
+
+def parse_counters(html: str, labels: dict[str, str]) -> dict[str, int]:
+    """Liczniki w stylu „41,500+ zrealizowanych zamówień” albo „Zrealizowanych zamówień: 41 500”.
+
+    labels: {klucz: tekst etykiety}. Liczba jest szukana tuż przed etykietą, potem tuż za nią,
+    a na końcu w atrybucie data-* (liczniki animowane skryptem mają w tekście 0)."""
+    soup = BeautifulSoup(html, "lxml")
+    for t in soup(["script", "style", "noscript"]):
+        t.decompose()
+    text = re.sub(r"\s+", " ", soup.get_text(" "))
+    out = {}
+    for key, label in labels.items():
+        lab = re.compile(r"\s+".join(map(re.escape, label.split())), re.I)
+        m = lab.search(text)
+        if not m:
+            continue
+        val = None
+        before = text[max(0, m.start() - 40):m.start()]
+        nums = list(_COUNT_NUM.finditer(before))
+        if nums and before[nums[-1].end():].strip(" :|-–") == "":
+            val = _count_value(nums[-1].group(1))
+        if not val:
+            after = text[m.end():m.end() + 40]
+            n = re.match(r"\s*[:\-–]?\s*" + _COUNT_NUM.pattern, after)
+            if n:
+                val = _count_value(n.group(1))
+        if not val:
+            raw = re.search(r"\s+".join(map(re.escape, label.split())), html, re.I)
+            if raw:
+                window = html[max(0, raw.start() - 600):raw.start()]
+                d = list(_DATA_NUM.finditer(window))
+                if d:
+                    val = _count_value(d[-1].group(1))
+        if val:
+            out[key] = val
     return out
