@@ -13,6 +13,9 @@
 <div class="app">
   <aside class="side">
     <a class="brand" href="/"><span class="logo">{{ icon('trend') }}</span>Stany sklepów</a>
+    <form class="side-search" method="get" action="/search" role="search">
+      <input type="search" name="q" placeholder="Szukaj produktu lub kodu…" value="{{ search_q or '' }}" aria-label="Szukaj produktu">
+    </form>
     <nav class="nav">
       <a href="/" class="{{ 'on' if section == 'home' }}">{{ icon('home') }}Pulpit</a>
       <a href="/competition" class="{{ 'on' if section == 'competition' }}">{{ icon('chart') }}Analiza konkurencji</a>

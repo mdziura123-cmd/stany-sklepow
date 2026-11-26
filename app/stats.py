@@ -249,7 +249,8 @@ def trends(sid: int, last: str):
             base = c or p
             cv, pv = (c or {}).get("value", 0), (p or {}).get("value", 0)
             cs, ps = (c or {}).get("sold", 0), (p or {}).get("sold", 0)
-            rows.append({"id": pid, "name": base["name"], "category": base["category"], "cur": cs, "prev": ps,
+            rows.append({"id": pid, "name": base["name"], "category": base["category"], "code": base.get("code"),
+                         "cur": cs, "prev": ps,
                          "cur_value": cv, "prev_value": pv, "diff_value": cv - pv,
                          "pct": _change(cs, ps)})
         rows = [r for r in rows if max(r["cur"], r["prev"]) >= 3]
@@ -294,7 +295,8 @@ def big_orders(shop: dict, d_from: str, d_to: str, limit=50):
         n = len(typical[r["product_id"]])
         is_big = v >= min_value or (n >= 4 and q >= max(min_units, mult * med))
         if is_big:
-            out.append({"id": r["product_id"], "name": r["name"], "category": r["category"], "day": r["day"],
+            out.append({"id": r["product_id"], "name": r["name"], "category": r["category"], "code": r["code"],
+                        "day": r["day"],
                         "prev_day": r["prev_day"], "units": q, "value": v, "typical": med if n >= 2 else None,
                         "stock": r["stock"]})
     return sorted(out, key=lambda x: -x["value"])[:limit]
@@ -478,11 +480,11 @@ def offer_changes(shop: dict, period: str = "30") -> dict:
            ORDER BY last_seen DESC, name""", (sid, rg.last, _shift(rg.start, -1))).fetchall()
     out["gone_reliable"] = bool(last_run and last_run["status"] == "ok")
     sold_out = c.execute(
-        """SELECT ch.*, p.name, p.category FROM changes ch JOIN products p ON p.id = ch.product_id
+        """SELECT ch.*, p.name, p.category, p.code FROM changes ch JOIN products p ON p.id = ch.product_id
            WHERE ch.shop_id=? AND ch.day BETWEEN ? AND ? AND ch.stock = 0 AND ch.prev_stock > 0
              AND ch.kind <> 'correction' ORDER BY ch.day DESC""", (sid, rg.start, rg.end)).fetchall()
     back = c.execute(
-        """SELECT ch.*, p.name, p.category FROM changes ch JOIN products p ON p.id = ch.product_id
+        """SELECT ch.*, p.name, p.category, p.code FROM changes ch JOIN products p ON p.id = ch.product_id
            WHERE ch.shop_id=? AND ch.day BETWEEN ? AND ? AND ch.prev_stock = 0 AND ch.stock > 0
              AND ch.kind <> 'correction' ORDER BY ch.day DESC""", (sid, rg.start, rg.end)).fetchall()
     out["sold_out"], out["back"] = sold_out, back

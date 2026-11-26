@@ -45,7 +45,7 @@
         <tbody>
         {% for x in ov.low %}
           <tr>
-            <td>{{ product_cell(shop, x) }}</td>
+            <td>{{ product_cell(shop, x) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td>
             <td class="r"><span class="pill {{ 'bad' if x.days_left < 3 else 'warn' }}">{{ x.days_left|days }}</span>
               <div class="meta">stan {{ x.stock|num }}</div></td>
           </tr>
@@ -63,10 +63,10 @@
     <div class="card-body flush">
       {% if not ov.top %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
       <table>
-        <thead><tr><th></th><th>Produkt</th><th class="r">Szt.</th><th class="r">Wartość</th></tr></thead>
+        <thead><tr><th></th><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Szt.</th><th class="r">Wartość</th></tr></thead>
         <tbody>
         {% for p in ov.top %}
-          <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td>
+          <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td><td class="code-col hide-m">{{ p.code or "–" }}</td>
             <td class="r">{{ p.sold|num }}</td><td class="r"><b>{{ p.value|money }}</b></td></tr>
         {% endfor %}
         </tbody>
@@ -99,10 +99,10 @@
   <div class="card-head"><h2>{{ icon('zap') }} Duże zamówienia</h2><a class="small" href="/shop/{{ shop.id }}/sales?period={{ period }}#duze">więcej →</a></div>
   <div class="card-body flush">
     <table>
-      <thead><tr><th>Produkt</th><th class="r hide-m">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th></tr></thead>
+      <thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th class="r hide-m">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th></tr></thead>
       <tbody>
       {% for b in ov.big %}
-        <tr><td>{{ product_cell(shop, b) }}</td><td class="r hide-m">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
+        <tr><td>{{ product_cell(shop, b) }}</td><td class="code-col hide-m">{{ b.code or "–" }}</td><td class="r hide-m">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
           <td class="r"><b>{{ b.value|money }}</b></td><td class="r hide-m muted">{{ b.typical|num if b.typical else '–' }}</td></tr>
       {% endfor %}
       </tbody>

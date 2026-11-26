@@ -72,10 +72,10 @@
   <div class="card-body flush tbl-wrap tall">
     {% if not d.rows %}{{ empty('Brak dostaw w tym okresie', '', 'truck') }}{% else %}
     <table id="t-del">
-      <thead><tr><th>Odczyt</th><th>Produkt</th><th class="r">Przybyło</th><th class="r hide-m">Stan</th><th class="r hide-m">Wartość</th></tr></thead>
+      <thead><tr><th>Odczyt</th><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Przybyło</th><th class="r hide-m">Stan</th><th class="r hide-m">Wartość</th></tr></thead>
       <tbody>
       {% for r in d.rows[:500] %}
-        <tr><td class="nowrap">{{ r.day|short }}</td><td>{{ product_cell(shop, r, r.product_id) }}</td>
+        <tr><td class="nowrap">{{ r.day|short }}</td><td>{{ product_cell(shop, r, r.product_id) }}</td><td class="code-col hide-m">{{ r.code or "–" }}</td>
           <td class="r plus">+{{ r.delta|num }}</td><td class="r hide-m">{{ r.prev_stock|num }} → {{ r.stock|num }}</td>
           <td class="r hide-m">{{ (r.delta * (r.price or 0))|money }}</td></tr>
       {% endfor %}

@@ -336,3 +336,12 @@ tr.muted td { color: var(--muted); }
 .heat24 .tot { font-size: .76rem; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
 .inline-pct { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
 .trends { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+
+/* kod produktu i wyszukiwanie w tabelach */
+.code-col { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; color: var(--text-2); white-space: nowrap; }
+.code-m { display: none; }
+@media (max-width: 860px) { .code-m { display: inline; } }
+.tbl-search { width: 200px; margin: 0; padding: 6px 10px; font-size: .85rem; }
+@media (max-width: 860px) { .tbl-search { width: 100%; } .card-head .actions { width: 100%; } }
+.side-search { margin: 0 12px 10px; }
+.side-search input { width: 100%; margin: 0; padding: 7px 10px; font-size: .86rem; }

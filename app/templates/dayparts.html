@@ -63,7 +63,7 @@
       {% if not r.top %}{{ empty('Brak sprzedaży') }}{% else %}
       <table><tbody>
       {% for p in r.top %}
-        <tr><td>{{ product_cell(shop, p) }}</td><td class="r"><b>{{ p.value|money }}</b><div class="meta">{{ p.sold|num }} szt.</div></td></tr>
+        <tr><td>{{ product_cell(shop, p) }}</td><td class="code-col hide-m">{{ p.code or "–" }}</td><td class="r"><b>{{ p.value|money }}</b><div class="meta">{{ p.sold|num }} szt.</div></td></tr>
       {% endfor %}
       </tbody></table>
       {% endif %}

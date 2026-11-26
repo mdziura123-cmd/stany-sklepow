@@ -49,14 +49,41 @@
     } catch (_) { f.submit(); }
   });
 
+  // pole „Szukaj” w każdej tabeli produktów, która go jeszcze nie ma (nazwa, kod, kategoria)
+  let auto = 0;
+  document.querySelectorAll(".card table").forEach((tbl) => {
+    const card = tbl.closest(".card");
+    if (!card || card.querySelector("input[data-filter]") || tbl.dataset.nosearch !== undefined) return;
+    if (!tbl.querySelector("a.name") || tbl.querySelectorAll("tbody tr").length < 5) return;
+    if (!tbl.id) tbl.id = "t-auto-" + (++auto);
+    const inp = document.createElement("input");
+    inp.type = "search";
+    inp.placeholder = "Szukaj nazwy lub kodu…";
+    inp.dataset.filter = "#" + tbl.id;
+    inp.className = "tbl-search";
+    let head = card.querySelector(".card-head");
+    if (head) {
+      let box = head.querySelector(".actions");
+      if (!box) { box = document.createElement("div"); box.className = "actions"; head.appendChild(box); }
+      box.prepend(inp);
+    } else {
+      const wrap = document.createElement("div");
+      wrap.className = "card-head";
+      wrap.appendChild(inp);
+      card.prepend(wrap);
+    }
+  });
+
   // filtrowanie tabel na bieżąco
   document.querySelectorAll("input[data-filter]").forEach((inp) => {
     const tbl = document.querySelector(inp.dataset.filter);
     if (!tbl) return;
     inp.addEventListener("input", () => {
       const q = inp.value.trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
       tbl.querySelectorAll("tbody tr").forEach((tr) => {
-        tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? "" : "none";
+        const txt = tr.textContent.toLowerCase();
+        tr.style.display = words.every((w) => txt.includes(w)) ? "" : "none";
       });
     });
   });

@@ -15,12 +15,12 @@
       {{ empty('Nie obserwujesz jeszcze żadnych produktów', 'Kliknij gwiazdkę przy produkcie, a pojawi się tutaj. Możesz ustawić próg minimalnego stanu – dostaniesz alert, gdy stan spadnie poniżej.', 'star') }}
     {% else %}
     <table>
-      <thead><tr><th></th><th>Produkt</th><th class="r">Stan</th><th class="r hide-m">Sprzedaż 7 dni</th><th class="r">Starczy na</th><th class="r">Próg</th><th>Status</th></tr></thead>
+      <thead><tr><th></th><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Stan</th><th class="r hide-m">Sprzedaż 7 dni</th><th class="r">Starczy na</th><th class="r">Próg</th><th>Status</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr>
           <td style="width:30px">{{ watch_btn(shop, r.id, true) }}</td>
-          <td>{{ product_cell(shop, r) }}</td>
+          <td>{{ product_cell(shop, r) }}</td><td class="code-col hide-m">{{ r.code or "–" }}</td>
           <td class="r"><b>{{ r.cur_stock|num }}</b></td>
           <td class="r hide-m">{{ r.week|num }}</td>
           <td class="r">{% if r.days_left is not none %}{{ r.days_left|days }}{% else %}<span class="muted">–</span>{% endif %}</td>

@@ -4,7 +4,7 @@
 
 {% macro prod(r, pid) -%}
 <a class="name" href="/shop/{{ r.shop_id }}/product/{{ pid }}">{{ r.name }}</a>
-<div class="meta">{{ r.shop_name }}{% if r.category %} · {{ r.category }}{% endif %}</div>
+<div class="meta">{{ r.shop_name }}{% if r.category %} · {{ r.category }}{% endif %}{% if r.code %}<span class="code-m"> · {{ r.code }}</span>{% endif %}</div>
 {%- endmacro %}
 
 {% macro when(r) -%}
@@ -223,10 +223,10 @@
   <div class="card-body flush tbl-wrap tall">
     {% if not r.prices %}{{ empty('Bez zmian cen', '', 'tag') }}{% else %}
     <table id="t-prices">
-      <thead><tr><th>Produkt</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead>
+      <thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead>
       <tbody>
       {% for x in r.prices %}
-        <tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td>
+        <tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td>
           <td class="r muted">{{ x.prev_price|money }}</td><td class="r"><b>{{ x.price|money }}</b></td><td class="r">{{ delta(x.pct, true) }}</td></tr>
       {% endfor %}
       </tbody>
@@ -240,8 +240,8 @@
     <div class="card-head"><h2>{{ icon('x') }} Zniknęły ze sprzedaży</h2><span class="hint">wyprzedane w okresie</span></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.sold_out %}{{ empty('Nic się nie wyprzedało', '', 'check') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Było</th></tr></thead><tbody>
-      {% for x in r.sold_out %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.prev_stock, x.prev_avail) }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno</th><th class="r">Było</th></tr></thead><tbody>
+      {% for x in r.sold_out %}<tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.prev_stock, x.prev_avail) }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -249,8 +249,8 @@
     <div class="card-head"><h2>{{ icon('refresh') }} Ponownie dostępne</h2></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.back %}{{ empty('Brak powrotów', '', 'box') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Jest</th></tr></thead><tbody>
-      {% for x in r.back %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.stock, x.avail) }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno</th><th class="r">Jest</th></tr></thead><tbody>
+      {% for x in r.back %}<tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.stock, x.avail) }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -261,8 +261,8 @@
     <div class="card-head"><h2>{{ icon('plus') }} Nowe produkty</h2></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.new %}{{ empty('Brak nowych produktów', '', 'box') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Pierwszy odczyt</th><th class="r">Cena</th></tr></thead><tbody>
-      {% for x in r.new %}<tr><td>{{ prod(x, x.id) }}</td><td class="nowrap mono">{{ x.first_ts[5:16]|replace('-', '.') }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Pierwszy odczyt</th><th class="r">Cena</th></tr></thead><tbody>
+      {% for x in r.new %}<tr><td>{{ prod(x, x.id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td class="nowrap mono">{{ x.first_ts[5:16]|replace('-', '.') }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -270,8 +270,8 @@
     <div class="card-head"><h2>{{ icon('x') }} Usunięte z oferty</h2><span class="hint">tylko po pełnych odczytach</span></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.removed %}{{ empty('Nic nie zniknęło z oferty', '', 'check') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Ostatnio</th></tr></thead><tbody>
-      {% for x in r.removed %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno</th><th class="r">Ostatnio</th></tr></thead><tbody>
+      {% for x in r.removed %}<tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -282,8 +282,8 @@
     <div class="card-head"><h2>{{ icon('clock') }} Przeszły na „na zapytanie”</h2><span class="hint">sklep przestał trzymać na magazynie</span></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.on_request_list %}{{ empty('Brak takich zmian', 'Zmiany statusu „na zapytanie” są zapisywane od tej wersji aplikacji.', 'check') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Cena</th></tr></thead><tbody>
-      {% for x in r.on_request_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno</th><th class="r">Cena</th></tr></thead><tbody>
+      {% for x in r.on_request_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r">{{ x.cur_price|money if x.cur_price is not none else '–' }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -291,8 +291,8 @@
     <div class="card-head"><h2>{{ icon('refresh') }} Wróciły na magazyn</h2><span class="hint">z „na zapytanie” do stanu w sztukach</span></div>
     <div class="card-body flush tbl-wrap tall">
       {% if not r.stocked_list %}{{ empty('Brak takich zmian', '', 'box') }}{% else %}
-      <table><thead><tr><th>Produkt</th><th>Okno</th><th class="r">Stan teraz</th></tr></thead><tbody>
-      {% for x in r.stocked_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
+      <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno</th><th class="r">Stan teraz</th></tr></thead><tbody>
+      {% for x in r.stocked_list %}<tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r">{{ avail_cell(x.cur_stock, x.cur_avail) }}</td></tr>{% endfor %}
       </tbody></table>{% endif %}
     </div>
   </section>
@@ -302,9 +302,9 @@
   <div class="card-head"><h2>{{ icon('box') }} Największe zmiany stanów</h2><span class="hint">50 największych w okresie</span></div>
   <div class="card-body flush tbl-wrap tall">
     {% if not r.stock_changes %}{{ empty('Brak zmian stanów', 'Sklepy podające tylko dostępność nie mają liczbowych stanów.', 'box') }}{% else %}
-    <table><thead><tr><th>Produkt</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead><tbody>
+    <table><thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th>Okno odczytów</th><th class="r">Było</th><th class="r">Jest</th><th class="r">Zmiana</th></tr></thead><tbody>
     {% for x in r.stock_changes %}
-      <tr><td>{{ prod(x, x.product_id) }}</td><td>{{ when(x) }}</td><td class="r muted">{{ x.prev_stock|num }}</td><td class="r"><b>{{ x.stock|num }}</b></td>
+      <tr><td>{{ prod(x, x.product_id) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td><td>{{ when(x) }}</td><td class="r muted">{{ x.prev_stock|num }}</td><td class="r"><b>{{ x.stock|num }}</b></td>
         <td class="r"><span class="delta {{ 'up' if x.delta > 0 else 'down' }}">{{ '+' if x.delta > 0 }}{{ x.delta|num }}</span></td></tr>
     {% endfor %}
     </tbody></table>{% endif %}

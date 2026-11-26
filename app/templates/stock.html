@@ -26,12 +26,12 @@
     {% if not st.enough %}{{ empty('Za mało danych', 'Potrzebne są co najmniej dwa dni pobierania.', 'clock') }}
     {% elif not st.supply %}{{ empty('Nic się nie kończy', 'Żaden sprzedawany produkt nie skończy się w ciągu 60 dni.', 'check') }}{% else %}
     <table id="t-sup">
-      <thead><tr><th></th><th>Produkt</th><th class="r">Stan</th><th class="r hide-m">Średnio / dzień</th><th class="r">Starczy na</th><th class="r hide-m">Do ok.</th></tr></thead>
+      <thead><tr><th></th><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Stan</th><th class="r hide-m">Średnio / dzień</th><th class="r">Starczy na</th><th class="r hide-m">Do ok.</th></tr></thead>
       <tbody>
       {% for x in st.supply %}
         <tr>
           <td style="width:30px">{{ watch_btn(shop, x.id, x.id in watched) }}</td>
-          <td>{{ product_cell(shop, x) }}</td>
+          <td>{{ product_cell(shop, x) }}</td><td class="code-col hide-m">{{ x.code or "–" }}</td>
           <td class="r">{{ x.stock|num }}</td>
           <td class="r hide-m">{{ '%.1f'|format(x.avg)|replace('.', ',') }}</td>
           <td class="r"><span class="pill {{ 'bad' if x.days_left < 3 else ('warn' if x.days_left <= 14 else '') }}">{{ x.days_left|days }}</span></td>
@@ -58,10 +58,10 @@
       {{ empty('Za krótka historia', 'Produkty bez ruchu przez ' ~ st.dead_days ~ ' dni da się wskazać po ' ~ st.dead_days ~ ' dniach pobierania (teraz: ' ~ st.dead.tracked ~ ').', 'clock') }}
     {% elif not st.dead.rows %}{{ empty('Brak martwego towaru', '', 'check') }}{% else %}
     <table>
-      <thead><tr><th>Produkt</th><th class="r">Stan</th><th class="r">Wartość</th><th class="r">Bez ruchu</th></tr></thead>
+      <thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Stan</th><th class="r">Wartość</th><th class="r">Bez ruchu</th></tr></thead>
       <tbody>
       {% for r in st.dead.rows %}
-        <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_stock|num }}</td><td class="r"><b>{{ r.value|money }}</b></td>
+        <tr><td>{{ product_cell(shop, r) }}</td><td class="code-col hide-m">{{ r.code or "–" }}</td><td class="r">{{ r.cur_stock|num }}</td><td class="r"><b>{{ r.value|money }}</b></td>
           <td class="r">{{ r.idle }} dni</td></tr>
       {% endfor %}
       </tbody>

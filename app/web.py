@@ -201,6 +201,28 @@ def shop_ctx(shop, tab, **kw):
     return kw
 
 
+@route("GET", "/search")
+def search_view(req, q):
+    query = (q.get("q") or "").strip()
+    rows, total = [], 0
+    if query:
+        words = [w for w in query.split() if w][:6]
+        conds, args = [], []
+        for w in words:
+            conds.append("(p.name LIKE ? OR p.code LIKE ? OR p.category LIKE ? OR p.brand LIKE ?)")
+            args += [f"%{w}%"] * 4
+        where = " AND ".join(conds)
+        c = db.conn()
+        total = c.execute(f"SELECT COUNT(*) FROM products p WHERE {where} AND p.cur_ts IS NOT NULL", args).fetchone()[0]
+        rows = c.execute(f"""
+            SELECT p.*, s.name AS shop_name, (w.product_id IS NOT NULL) AS watched
+            FROM products p JOIN shops s ON s.id = p.shop_id LEFT JOIN watch w ON w.product_id = p.id
+            WHERE {where} AND p.cur_ts IS NOT NULL
+            ORDER BY (p.code = ?) DESC, (p.gone_ts IS NOT NULL), COALESCE(p.cur_stock, 0) DESC, p.name
+            LIMIT 200""", (*args, query)).fetchall()
+    return render("search.html", req, section="search", search_q=query, rows=rows, total=total)
+
+
 @route("GET", "/competition")
 def competition_view(req, q):
     ids = []

@@ -83,7 +83,7 @@
 
 {% macro product_cell(shop, p, id=none) -%}
 <a class="name" href="/shop/{{ shop.id }}/product/{{ id or p.id }}">{{ p.name }}</a>
-<div class="meta">{{ p.category }}{% if p.code %} · {{ p.code }}{% endif %}</div>
+<div class="meta">{{ p.category }}{% if p.code %}<span class="code-m"> · {{ p.code }}</span>{% endif %}</div>
 {%- endmacro %}
 
 {% macro not_enough(rg) -%}

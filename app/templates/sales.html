@@ -40,10 +40,10 @@
   <div class="card-body flush tbl-wrap tall">
     {% if not s.top %}{{ empty('Brak sprzedaży w tym okresie') }}{% else %}
     <table id="t-top">
-      <thead><tr><th></th><th>Produkt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Spadków</th><th class="r hide-m">Stan</th></tr></thead>
+      <thead><tr><th></th><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Spadków</th><th class="r hide-m">Stan</th></tr></thead>
       <tbody>
       {% for p in s.top %}
-        <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td><td class="r">{{ p.sold|num }}</td>
+        <tr><td class="rank">{{ loop.index }}</td><td>{{ product_cell(shop, p) }}</td><td class="code-col hide-m">{{ p.code or "–" }}</td><td class="r">{{ p.sold|num }}</td>
           <td class="r"><b>{{ p.value|money }}</b></td><td class="r hide-m">{{ p.orders }}</td><td class="r hide-m">{{ p.stock|num }}</td></tr>
       {% endfor %}
       </tbody>
@@ -84,16 +84,16 @@
         <thead><tr><th>Rośnie</th><th class="r">Teraz</th><th class="r">Wcześniej</th><th class="r">Zmiana</th></tr></thead>
         <tbody>
         {% for r in tr.up[:6] %}
-          <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
+          <tr><td>{{ product_cell(shop, r) }}</td><td class="code-col hide-m">{{ r.code or "–" }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
             <td class="r">{{ delta(r.pct) if r.pct is not none else '<span class="pill ok">nowe</span>'|safe }}</td></tr>
-        {% else %}<tr><td colspan="4" class="muted">Brak</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="5" class="muted">Brak</td></tr>{% endfor %}
         </tbody>
         <thead><tr><th>Słabnie</th><th></th><th></th><th></th></tr></thead>
         <tbody>
         {% for r in tr.down[:6] %}
-          <tr><td>{{ product_cell(shop, r) }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
+          <tr><td>{{ product_cell(shop, r) }}</td><td class="code-col hide-m">{{ r.code or "–" }}</td><td class="r">{{ r.cur_value|money(0) }}</td><td class="r muted">{{ r.prev_value|money(0) }}</td>
             <td class="r">{{ delta(r.pct) }}</td></tr>
-        {% else %}<tr><td colspan="4" class="muted">Brak</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="5" class="muted">Brak</td></tr>{% endfor %}
         </tbody>
       </table>
       {% endif %}
@@ -125,10 +125,10 @@
   <div class="card-body flush tbl-wrap tall">
     {% if not s.big %}{{ empty('Brak dużych zamówień w tym okresie', '', 'zap') }}{% else %}
     <table>
-      <thead><tr><th>Produkt</th><th class="r">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th><th class="r hide-m">Stan po</th></tr></thead>
+      <thead><tr><th>Produkt</th><th class="hide-m">Kod</th><th class="r">Odczyt</th><th class="r">Szt.</th><th class="r">Wartość</th><th class="r hide-m">Typowo</th><th class="r hide-m">Stan po</th></tr></thead>
       <tbody>
       {% for b in s.big %}
-        <tr><td>{{ product_cell(shop, b) }}</td><td class="r">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
+        <tr><td>{{ product_cell(shop, b) }}</td><td class="code-col hide-m">{{ b.code or "–" }}</td><td class="r">{{ b.day|short }}</td><td class="r">{{ b.units|num }}</td>
           <td class="r"><b>{{ b.value|money }}</b></td><td class="r hide-m muted">{{ b.typical|num if b.typical else '–' }}</td><td class="r hide-m">{{ b.stock|num }}</td></tr>
       {% endfor %}
       </tbody>

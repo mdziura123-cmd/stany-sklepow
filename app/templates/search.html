@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, empty, watch_btn %}
+{% block title %}Szukaj{% if search_q %}: {{ search_q }}{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Szukaj produktu</h1>
+    <p class="muted">Nazwa, kod, kategoria albo marka – we wszystkich sklepach</p>
+  </div>
+</div>
+
+<form method="get" action="/search" class="filters toolbar">
+  <input type="search" name="q" value="{{ search_q }}" placeholder="np. 48012125 albo „Z-07 45x55”" autofocus style="flex:1;min-width:220px">
+  <button class="btn">{{ icon('search') }}Szukaj</button>
+</form>
+
+{% if not search_q %}
+<div class="card">{{ empty('Wpisz nazwę lub kod produktu', 'Można podać kilka słów, np. „O-ring 20x2 NBR” – znajdą się produkty zawierające wszystkie.', 'search') }}</div>
+{% elif not rows %}
+<div class="card">{{ empty('Nic nie znaleziono', 'Sprawdź pisownię albo wpisz krótszy fragment nazwy lub kodu.', 'search') }}</div>
+{% else %}
+<p class="muted small">Znaleziono {{ total|num }}{% if total > rows|length %}, pokazano {{ rows|length }} – zawęź wyszukiwanie{% endif %}</p>
+<section class="card">
+  <div class="card-body flush tbl-wrap">
+  <table data-nosearch>
+    <thead><tr><th></th><th>Produkt</th><th>Kod</th><th class="hide-m">Sklep</th><th class="r">Stan</th><th class="r hide-m">Cena netto</th><th class="hide-m">Ostatnia zmiana</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set shop = {'id': r.shop_id} %}
+      <tr>
+        <td style="width:30px">{{ watch_btn(shop, r.id, r.watched) }}</td>
+        <td><a class="name" href="/shop/{{ r.shop_id }}/product/{{ r.id }}">{{ r.name }}</a>
+          <div class="meta">{{ r.category }}{% if r.brand %} · {{ r.brand }}{% endif %}<span class="code-m"> · {{ r.shop_name }}</span></div></td>
+        <td class="code-col">{{ r.code or '–' }}</td>
+        <td class="hide-m">{{ r.shop_name }}</td>
+        <td class="r nowrap">
+          {% if r.gone_ts %}<span class="pill">usunięty z oferty</span>
+          {% elif r.cur_status == 'on_request' %}<span class="pill warn">na zapytanie</span>
+          {% elif r.cur_stock is not none %}<b>{{ r.cur_stock|num }}</b>{% if r.cur_stock == 0 %} <span class="pill bad">brak</span>{% endif %}
+          {% elif r.cur_avail == 1 %}dostępny{% elif r.cur_avail == 0 %}<span class="pill bad">brak</span>{% else %}–{% endif %}
+        </td>
+        <td class="r hide-m">{{ r.cur_price|money if r.cur_price is not none else '–' }}</td>
+        <td class="hide-m nowrap muted">{{ r.stock_since|short if r.stock_since else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
